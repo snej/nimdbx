@@ -1,0 +1,5 @@
+*.dylib
+*.dll
+*.so
+bin/
+tests/test_db

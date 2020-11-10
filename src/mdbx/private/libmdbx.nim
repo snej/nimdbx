@@ -110,11 +110,9 @@ type MDBXErrorCode* {.size: sizeof(cint).} = enum
     MDBX_TOO_LARGE = (-30417),
     MDBX_THREAD_MISMATCH = (-30416),
     MDBX_TXN_OVERLAPPING = (-30415),
+    MDBX_RESULT_TRUE = -1,
     MDBX_SUCCESS = 0,
-
-type MDBXBoolResult* {.size: sizeof(cint).} = enum
-    MDBX_RESULT_TRUE = (-1)
-    MDBX_RESULT_FALSE = 0,
+    #MDBX_RESULT_FALSE = MDBX_SUCCESS,
 
 type MDBX_env* = ptr object
 type MDBX_txn* = ptr object
@@ -194,16 +192,19 @@ proc mdbx_txn_abort*(txn: MDBX_txn): MDBXErrorCode  {.importc: "mdbx_txn_abort".
 proc mdbx_dbi_open*(txn: MDBX_txn, name: cstring, flags: DBIFlags, dbi: var MDBX_dbi): MDBXErrorCode  {.importc: "mdbx_dbi_open".}
 proc mdbx_dbi_flags_ex*(txn: MDBX_txn, dbi: MDBX_dbi, flags: var DBIFlags, state: var DBIStateFlags): MDBXErrorCode  {.importc: "mdbx_dbi_flags_ex".}
 proc mdbx_dbi_stat*(txn: MDBX_txn, dbi: MDBX_dbi, stat: var MDBX_stat, bytes: csize_t): MDBXErrorCode  {.importc: "mdbx_dbi_stat".}
+proc mdbx_dbi_sequence*(txn: MDBX_txn, dbi: MDBX_dbi, result: var uint64, increment: uint64): MDBXErrorCode  {.importc: "mdbx_dbi_sequence".}
 
 proc mdbx_get*(txn: MDBX_txn, dbi: MDBX_dbi, key: var MDBX_val, data: var MDBX_val): MDBXErrorCode  {.importc: "mdbx_get".}
+proc mdbx_get_nearest*(txn: MDBX_txn, dbi: MDBX_dbi, key: var MDBX_val, data: var MDBX_val): MDBXErrorCode  {.importc: "mdbx_get_nearest".}
 proc mdbx_put*(txn: MDBX_txn, dbi: MDBX_dbi, key: var MDBX_val, data: var MDBX_val, flags: UpdateFlags): MDBXErrorCode  {.importc: "mdbx_put".}
 proc mdbx_del*(txn: MDBX_txn, dbi: MDBX_dbi, key: var MDBX_val, data: ptr MDBX_val): MDBXErrorCode  {.importc: "mdbx_del".}
 
 proc mdbx_cursor_open*(txn: MDBX_txn, dbi: MDBX_dbi, cursor: var MDBX_cursor): MDBXErrorCode  {.importc: "mdbx_cursor_open".}
-proc mdbx_cursor_close*(cursor: MDBX_cursor): MDBXErrorCode  {.importc: "mdbx_cursor_close".}
+proc mdbx_cursor_close*(cursor: MDBX_cursor)  {.importc: "mdbx_cursor_close".}
 proc mdbx_cursor_get*(cursor: MDBX_cursor, key: var MDBX_val, data: var MDBX_val, op: CursorOp): MDBXErrorCode  {.importc: "mdbx_cursor_get".}
 proc mdbx_cursor_put*(cursor: MDBX_cursor, key: var MDBX_val, data: var MDBX_val, flags: UpdateFlags): MDBXErrorCode  {.importc: "mdbx_cursor_put".}
 proc mdbx_cursor_del*(cursor: MDBX_cursor, flags: UpdateFlags): MDBXErrorCode  {.importc: "mdbx_cursor_del".}
-
+proc mdbx_cursor_on_first*(cursor: MDBX_cursor): MDBXErrorCode  {.importc: "mdbx_cursor_on_first".}
+proc mdbx_cursor_on_last*(cursor: MDBX_cursor): MDBXErrorCode  {.importc: "mdbx_cursor_on_last".}
 
 {.pop.}
