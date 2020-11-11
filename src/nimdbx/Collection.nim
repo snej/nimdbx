@@ -1,19 +1,20 @@
 # Collection.nim
 
-import FlatDB, private/libmdbx, private/utils
+import Database, private/libmdbx, private/utils
 
 let nil_DBI = MDBX_dbi(0xFFFFFFFF)
 
 type
     CollectionObj = object
         name* {.requiresInit.}  : string
-        db* {.requiresInit.}    : FlatDB
+        db* {.requiresInit.}    : Database
         dbi {.requiresInit.}    : MDBX_dbi
         initialized*            : bool
 
     Collection* = ref CollectionObj
 
     CollectionFlag* = enum
+        ## Flags that describe properties of a Collection when opening or creating it.
         Create,             # Create Collection if it doesn't exist
         ReverseKeys,        # Compare key strings back-to-front
         DuplicateKeys,      # Allow duplicate keys
@@ -22,9 +23,10 @@ type
         IntegerDup,         # With DuplicateKeys, values are native ints, 4 or 8 bytes long
         ReverseDup          # With DuplicateKeys, values are compared back-to-front
     CollectionFlags* = set[CollectionFlag]
+        ## Flags that describe properties of a Collection when opening or creating it.
 
 
-proc openDBI(db: FlatDB, name: string, flags: DBIFlags): (MDBX_dbi, bool) =
+proc openDBI(db: Database, name: string, flags: DBIFlags): (MDBX_dbi, bool) =
     #db.mutex.lock() # FIX
     var envFlags: EnvFlags
     check mdbx_env_get_flags(db.env, envFlags);
@@ -52,14 +54,14 @@ proc openDBI(db: FlatDB, name: string, flags: DBIFlags): (MDBX_dbi, bool) =
         return (dbi, isNew);
 
 
-proc openRequiredDBI(db: FlatDB, name: string, flags: DBIFlags): (MDBX_dbi, bool) =
+proc openRequiredDBI(db: Database, name: string, flags: DBIFlags): (MDBX_dbi, bool) =
     result = openDBI(db, name, flags)
     if result[0] == nil_DBI:
         check MDBX_NOTFOUND
 
 
-proc openCollection*(db: FlatDB, name: string, flags: CollectionFlags): Collection =
-    ## Creates a Collection object giving access to a named collection in a FlatDB.
+proc openCollection*(db: Database, name: string, flags: CollectionFlags): Collection =
+    ## Creates a Collection object giving access to a named collection in a Database.
     ## If the collection does not exist, and the ``Create`` flag is not set, raises MDBX_NOTFOUND.
 
     # WARNING: This assumes set[CollectionFlags] matches DBIFlags, except for MDBX_CREATE.
@@ -70,7 +72,7 @@ proc openCollection*(db: FlatDB, name: string, flags: CollectionFlags): Collecti
     let (dbi, isNew) = db.openRequiredDBI(name, dbiflags)
     return Collection(name: name, db: db, dbi: dbi, initialized: not isNew)
 
-proc createCollection*(db: FlatDB, name: string, flags: CollectionFlags = {}): Collection =
+proc createCollection*(db: Database, name: string, flags: CollectionFlags = {}): Collection =
     ## A convenience that calls ``openCollection`` with the ``Create`` flag set.
     openCollection(db, name, flags + {Create})
 
@@ -111,18 +113,18 @@ proc `=destroy`(snap: var SnapshotObj) =
         discard mdbx_txn_abort(snap.m_txn)
 
 
-proc makeTransaction(db: FlatDB, flags: TxnFlags): MDBX_txn =
+proc makeTransaction(db: Database, flags: TxnFlags): MDBX_txn =
     var txn: MDBX_txn
     check mdbx_txn_begin(db.env, nil, flags, txn)
     return txn
 
 
-proc beginSnapshot*(db: FlatDB): Snapshot =
+proc beginSnapshot*(db: Database): Snapshot =
     ## Creates a read-only transaction on the database, that lasts until the returned
     ## Snapshot exits scope.
     return Snapshot(m_txn: makeTransaction(db, MDBX_TXN_RDONLY))
 
-proc beginTransaction*(db: FlatDB): Transaction =
+proc beginTransaction*(db: Database): Transaction =
     ## Creates a writeable transaction on the database, that lasts until the returned
     ## Transaction exits scope.
     ##
@@ -219,73 +221,120 @@ proc inTransaction*(coll: Collection, fn: proc(t:CollectionTransaction)) =
     fn(t)
 
 
+######## KEY/VALUE DATA
+
+
+type Data* = object
+    ## A wrapper around a libmdbx key or value, which is just a pointer and length.
+    ## Data is automatically convertible to and from string and integer types.
+    val*: MDBX_val
+    i: int64
+
+# Disallow copying `Data`, to discourage keeping it around. A `Data` value becomes invalid when
+# the Snapshot or Transaction used to get it ends, because it points to an address inside the
+# memory-mapped database.
+proc `=`(dst: var Data, src: Data) {.error.} = echo "(can't copy a Data)"
+
+
+proc clear*(d: var Data) =
+    d.val = MDBX_val(base: nil, len: 0)
+
+converter exists*(d: Data): bool =
+    d.val.base != nil
+
+converter asData*(a: string): Data =
+    result.val = MDBX_val(base: unsafeAddr a[0], len: csize_t(a.len))
+converter asData*(a: openarray[char]): Data =
+    result.val = MDBX_val(base: unsafeAddr a[0], len: csize_t(a.len))
+converter asData*(a: openarray[byte]): Data =
+    result.val = MDBX_val(base: unsafeAddr a[0], len: csize_t(a.len))
+
+converter asData*(i: int32): Data =
+    result.i = i
+    result.val = MDBX_val(base: addr result.i, len: 4) #FIX: Endian dependent
+converter asData*(i: int64): Data =
+    result.i = i
+    result.val = MDBX_val(base: addr result.i, len: 8)
+
+converter asString*(d: Data): string =
+    result = newString(d.val.len)
+    if d.val.len > 0:
+        copyMem(addr result[0], d.val.base, d.val.len)
+
+proc `$`*(d: Data): string = d.asString()
+
+converter asByteSeq*(d: Data): seq[byte] =
+    result = newSeq[byte](d.val.len)
+    if d.val.len > 0:
+        copyMem(addr result[0], d.val.base, d.val.len)
+
+converter asInt32*(d: Data): int32 =
+    if d.val.len != 4: throw(MDBX_BAD_VALSIZE)
+    return cast[ptr int32](d.val.base)[]
+converter asInt64*(d: Data): int64 =
+    if d.val.len == 4:
+        return cast[ptr int32](d.val.base)[]
+    elif d.val.len == 8:
+        return cast[ptr int64](d.val.base)[]
+    else:
+        throw(MDBX_BAD_VALSIZE)
+
+
 ######## COLLECTION VALUE ACCESS
 
 
-proc asMDBX_val(a: openarray[char]): MDBX_val = MDBX_val(base: unsafeAddr a[0], len: csize_t(a.len))
-template asMDBX_val(i: int32): MDBX_val = MDBX_val(base: unsafeAddr i, len: 4)
-template asMDBX_val(i: int64): MDBX_val = MDBX_val(base: unsafeAddr i, len: 8)
+proc get*(snap: CollectionSnapshot, key: Data): Data =
+    ## Looks up the value of a key in a Collection.
+    if not checkOptional mdbx_get(snap.txn, snap.collection.dbi, key.val, result.val):
+        result.clear()
 
 
-proc get*[K](snap: CollectionSnapshot, key: K): string =
-    ## Looks up the value of a key in a Collection, and returns it as a (copied) string.
-    ## If the key is not found, returns an empty string.
-    var mdbKey: MDBX_val = asMDBX_val(key)
-    var mdbVal: MDBX_Val
-    if checkOptional mdbx_get(snap.txn, snap.collection.dbi, mdbKey, mdbVal):
-        return toString(mdbVal)
-    else:
-        return ""     # FIX: Should be something nil-like
-
-
-proc getNearest*(snap: CollectionSnapshot, key: openarray[char]): (string, string) =
+proc getNearest*(snap: CollectionSnapshot, key: Data): (Data, Data) =
     ## Finds the first key _greater than or equal to_ ``key``, and returns it and its value.
     ## Else returns a pair of empty strings.
-    var mdbKey: MDBX_val = key
-    var mdbVal: MDBX_Val
-    if checkOptional mdbx_get_nearest(snap.txn, snap.collection.dbi, mdbKey, mdbVal):
-        return (toString(mdbKey), toString(mdbVal))
+    var realKey = key
+    var value: Data
+    if checkOptional mdbx_get_nearest(snap.txn, snap.collection.dbi, realKey.val, value.val):
+        return (realKey, value)
     else:
-        return ("", "")     # FIX: Should be something nil-like
+        realKey.clear()
+        value.clear()
 
 
 proc get*(snap: CollectionSnapshot,
-          key: openarray[char],
+          key: Data,
           fn: proc(val:openarray[char])): bool {.discardable.} =
     ## Looks up the value of a key in a Collection; if found, it passes it to the callback
     ## function as an ``openarray``, _without copying_, then returns true.
     ## If not found, the callback is not called, and the result is false.
-    var mdbKey: MDBX_val = key
-    var mdbVal: MDBX_Val
-    result = checkOptional mdbx_get(snap.txn, snap.collection.dbi, mdbKey, mdbVal)
+    var mdbVal: MDBX_val
+    result = checkOptional mdbx_get(snap.txn, snap.collection.dbi, key.val, mdbVal)
     if result:
-        let val = cast[ptr UncheckedArray[char]](mdbVal.base)
-        fn(val.toOpenArray(0, int(mdbVal.len) - 1))
+        let valPtr = cast[ptr UncheckedArray[char]](mdbVal.base)
+        fn(valPtr.toOpenArray(0, int(mdbVal.len) - 1))
 
 
-proc i_put[K,V](t: CollectionTransaction, key: K, val: V, flags: UpdateFlags): MDBXErrorCode =
-    var mdbKey: MDBX_val = asMDBX_val(key)
-    var mdbVal: MDBX_val = asMDBX_val(val)
-    return mdbx_put(t.txn, t.collection.dbi, mdbKey, mdbVal, flags)
+proc i_put(t: CollectionTransaction, key: Data, value: Data, flags: UpdateFlags): MDBXErrorCode =
+    var rawVal = value.val
+    return mdbx_put(t.txn, t.collection.dbi, key.val, rawVal, flags)
 
-proc put*[K,V](t: CollectionTransaction, key: K, val: V) =
+proc put*(t: CollectionTransaction, key: Data, value: Data) =
     ## Stores a value for a key in a Collection.
-    check i_put(t, key, val, UpdateFlags(0))
+    check i_put(t, key, value, UpdateFlags(0))
 
 
-proc put*(t: CollectionTransaction, key: openarray[char], valueLen: int,
+proc put*(t: CollectionTransaction, key: Data, valueLen: int,
           fn: proc(val:openarray[char])) =
     ## Stores a value for a key in a Collection. The value is filled in by a callback function.
     ## This eliminates a memory-copy inside libmdbx, and might save the caller some allocation.
-    var mdbKey: MDBX_val = key
     var mdbVal = MDBX_val(base: nil, len: csize_t(valueLen))
-    check mdbx_put(t.txn, t.collection.dbi, mdbKey, mdbVal, MDBX_RESERVE)
+    check mdbx_put(t.txn, t.collection.dbi, key.val, mdbVal, MDBX_RESERVE)
     # Now pass the value pointer/size to the caller to fill in:
     let valPtr = cast[ptr UncheckedArray[char]](mdbVal.base)
     fn(valPtr.toOpenArray(0, valueLen - 1))
 
 
-proc insert*(t: CollectionTransaction, key: openarray[char], val: openarray[char]): bool =
+proc insert*(t: CollectionTransaction, key: Data, val: Data): bool =
     ## Adds a new key and its value; if the key exists, does nothing and returns false.
     let err = i_put(t, key, val, MDBX_NOOVERWRITE)
     if err == MDBX_KEYEXIST:
@@ -294,7 +343,7 @@ proc insert*(t: CollectionTransaction, key: openarray[char], val: openarray[char
         check err
         return true
 
-proc update*(t: CollectionTransaction, key: openarray[char], val: openarray[char]): bool =
+proc update*(t: CollectionTransaction, key: Data, val: Data): bool =
     ## Replaces an existing value for a key in a Collection;
     ## If the key doesn't already exist, does nothing and returns false.
     let err = i_put(t, key, val, MDBX_CURRENT)
@@ -304,7 +353,7 @@ proc update*(t: CollectionTransaction, key: openarray[char], val: openarray[char
         check err
         return true
 
-proc append*(t: CollectionTransaction, key: openarray[char], val: openarray[char]) =
+proc append*(t: CollectionTransaction, key: Data, val: Data) =
     ## Adds a key and value to the end of the collection. This is faster than ``put``, and is
     ## useful when populating a Collection with already-sorted data.
     ## The key must be greater than any existing key, or MDBX_EKEYMISMATCH will be raised.
@@ -313,11 +362,10 @@ proc append*(t: CollectionTransaction, key: openarray[char], val: openarray[char
 # TODO: Allow combinations of flags, by exposing a higher level flag set(?)
 # TODO: Add mdbx_replace
 
-proc del*(t: CollectionTransaction, key: openarray[char]): bool {.discardable.} =
+proc del*(t: CollectionTransaction, key: Data): bool {.discardable.} =
     ## Removes a key and its value from a Collection.
     ## Returns true if the key existed, false if it doesn't exist.
-    var mdbKey: MDBX_val = key
-    return checkOptional mdbx_del(t.txn, t.collection.dbi, mdbKey, nil)
+    return checkOptional mdbx_del(t.txn, t.collection.dbi, key.val, nil)
 
 
 ######## COLLECTION METADATA

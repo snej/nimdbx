@@ -1,7 +1,14 @@
 ## Raw bindings to C API of libmdbx. Do not use directly.
 ## Hand-translated from mdbx.h
 
-{.push dynlib: "libmdbx.dylib".}
+when defined(windows):
+  const libmdbx = "libmdbx.dll"
+elif defined(macosx):
+  const libmdbx = "libmdbx.dylib"
+else:
+  const libmdbx = "libmdbx.so"
+
+{.push dynlib: libmdbx.}
 
 type EnvFlags* = distinct cuint                # mdbx.h:907
 func `or`*(a, b: EnvFlags): EnvFlags {.inline.} = EnvFlags(cuint(a) or cuint(b))
@@ -121,7 +128,7 @@ type MDBX_cursor* = ptr object
 type MDBX_dbi* = distinct uint32
 func `==`*(a, b: MDBX_dbi): bool {.inline.} = ord(a) == ord(b)
 
-type MDBX_val* = object
+type MDBX_val* {.byref.} = object
     base*: pointer
     len*: csize_t
 
@@ -194,15 +201,15 @@ proc mdbx_dbi_flags_ex*(txn: MDBX_txn, dbi: MDBX_dbi, flags: var DBIFlags, state
 proc mdbx_dbi_stat*(txn: MDBX_txn, dbi: MDBX_dbi, stat: var MDBX_stat, bytes: csize_t): MDBXErrorCode  {.importc: "mdbx_dbi_stat".}
 proc mdbx_dbi_sequence*(txn: MDBX_txn, dbi: MDBX_dbi, result: var uint64, increment: uint64): MDBXErrorCode  {.importc: "mdbx_dbi_sequence".}
 
-proc mdbx_get*(txn: MDBX_txn, dbi: MDBX_dbi, key: var MDBX_val, data: var MDBX_val): MDBXErrorCode  {.importc: "mdbx_get".}
+proc mdbx_get*(txn: MDBX_txn, dbi: MDBX_dbi, key: MDBX_val, data: var MDBX_val): MDBXErrorCode  {.importc: "mdbx_get".}
 proc mdbx_get_nearest*(txn: MDBX_txn, dbi: MDBX_dbi, key: var MDBX_val, data: var MDBX_val): MDBXErrorCode  {.importc: "mdbx_get_nearest".}
-proc mdbx_put*(txn: MDBX_txn, dbi: MDBX_dbi, key: var MDBX_val, data: var MDBX_val, flags: UpdateFlags): MDBXErrorCode  {.importc: "mdbx_put".}
-proc mdbx_del*(txn: MDBX_txn, dbi: MDBX_dbi, key: var MDBX_val, data: ptr MDBX_val): MDBXErrorCode  {.importc: "mdbx_del".}
+proc mdbx_put*(txn: MDBX_txn, dbi: MDBX_dbi, key: MDBX_val, data: var MDBX_val, flags: UpdateFlags): MDBXErrorCode  {.importc: "mdbx_put".}
+proc mdbx_del*(txn: MDBX_txn, dbi: MDBX_dbi, key: MDBX_val, data: ptr MDBX_val): MDBXErrorCode  {.importc: "mdbx_del".}
 
 proc mdbx_cursor_open*(txn: MDBX_txn, dbi: MDBX_dbi, cursor: var MDBX_cursor): MDBXErrorCode  {.importc: "mdbx_cursor_open".}
 proc mdbx_cursor_close*(cursor: MDBX_cursor)  {.importc: "mdbx_cursor_close".}
 proc mdbx_cursor_get*(cursor: MDBX_cursor, key: var MDBX_val, data: var MDBX_val, op: CursorOp): MDBXErrorCode  {.importc: "mdbx_cursor_get".}
-proc mdbx_cursor_put*(cursor: MDBX_cursor, key: var MDBX_val, data: var MDBX_val, flags: UpdateFlags): MDBXErrorCode  {.importc: "mdbx_cursor_put".}
+proc mdbx_cursor_put*(cursor: MDBX_cursor, key: MDBX_val, data: var MDBX_val, flags: UpdateFlags): MDBXErrorCode  {.importc: "mdbx_cursor_put".}
 proc mdbx_cursor_del*(cursor: MDBX_cursor, flags: UpdateFlags): MDBXErrorCode  {.importc: "mdbx_cursor_del".}
 proc mdbx_cursor_on_first*(cursor: MDBX_cursor): MDBXErrorCode  {.importc: "mdbx_cursor_on_first".}
 proc mdbx_cursor_on_last*(cursor: MDBX_cursor): MDBXErrorCode  {.importc: "mdbx_cursor_on_last".}

@@ -6,7 +6,7 @@
 # To run these tests, simply execute `nimble test`.
 
 import strformat, unittest
-import mdbx
+import nimdbx
 
 
 # UTILITIES
@@ -14,7 +14,7 @@ import mdbx
 let DBPath = "tests/test_db"
 let CollectionName = "stuff"
 
-proc openNewTestDB(): FlatDB =
+proc openNewTestDB(): Database =
     eraseDB(DBPath)
     return openDB(DBPath)
 
@@ -107,6 +107,10 @@ test "Cursors":
             ct.put(&"key-{i:02}", &"the value is {i}.")
         ct.commit()
 
+    # NOTE: When using Cursor.key and Cursor.value with the `check` macro, you have to convert
+    # the `Data` result to a specific type, otherwise the implementation of `check` will try to
+    # copy it, which is disallowed. Thus we use `check $curs.key == ...`, not `check curs.key ==`.
+
     echo "-- Forwards iteration --"
     var cs = coll.beginSnapshot()
     var curs = makeCursor(cs)
@@ -114,16 +118,16 @@ test "Cursors":
     while curs.next():
         check i < 100
         #echo curs.key, " = ", curs.value
-        check curs.key == &"key-{i:02}"
-        check curs.value == &"the value is {i}."
+        check $curs.key == &"key-{i:02}"
+        check $curs.value == &"the value is {i}."
         i += 1
     check i == 100
 
     echo "-- seek --"
     check curs.seek("key")
     check curs.hasValue
-    check curs.key == "key-00"
-    check curs.value == "the value is 0."
+    check $curs.key == "key-00"
+    check $curs.value == "the value is 0."
 
     check not curs.seek("key-999")
     check not curs.hasValue
@@ -134,27 +138,27 @@ test "Cursors":
 
     check curs.seekExact("key-23")
     check curs.hasValue
-    check curs.key == "key-23"
-    check curs.value == "the value is 23."
+    check $curs.key == "key-23"
+    check $curs.value == "the value is 23."
 
     echo "-- prev --"
     check curs.prev()
     check curs
-    check curs.key == "key-22"
-    check curs.value == "the value is 22."
+    check $curs.key == "key-22"
+    check $curs.value == "the value is 22."
 
     echo "-- first --"
     check curs.first()
     check curs
-    check curs.key == "key-00"
-    check curs.value == "the value is 0."
+    check $curs.key == "key-00"
+    check $curs.value == "the value is 0."
     check not curs.prev()
 
     echo "-- last --"
     check curs.last()
     check curs
-    check curs.key == "key-99"
-    check curs.value == "the value is 99."
+    check $curs.key == "key-99"
+    check $curs.value == "the value is 99."
     check not curs.next()
 
     echo "-- Create new cursor --"
@@ -165,8 +169,8 @@ test "Cursors":
     while curs.prev():
         check i >= 0
         #echo curs.key, " = ", curs.value
-        check curs.key == &"key-{i:02}"
-        check curs.value == &"the value is {i}."
+        check $curs.key == &"key-{i:02}"
+        check $curs.value == &"the value is {i}."
         i -= 1
     check i == -1
 
@@ -186,7 +190,7 @@ test "Int Keys":
     echo "-- Get by key --"
     var cs = coll.beginSnapshot()
     for i in 0..99:
-        let val = cs.get(int32(i))
+        let val = cs.get(int32(i)).asString
         #echo i, " = ", val
         check val == &"the value is {i}."
 
@@ -196,8 +200,8 @@ test "Int Keys":
     while curs.next():
         check i < 100
         #echo curs.intKey, " = ", curs.value
-        check curs.intKey == i
-        check curs.value == &"the value is {i}."
+        check curs.key.asInt64 == i
+        check $curs.value == &"the value is {i}."
         i += 1
     check i == 100
 

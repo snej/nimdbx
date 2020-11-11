@@ -11,28 +11,28 @@ let kDefaultMaxDBIs     =  20'u32
 
 
 type
-    FlatDBObj* = object
+    DatabaseObj* = object
         env* {.requiresInit.}: MDBX_env
         #openDBIMutex: mutex    # TODO: Implement this
 
-    FlatDB* = ref FlatDBObj
+    Database* = ref DatabaseObj
         ## An open database file. Data is stored in Collections within it.
 
 
-proc `=destroy`(db: var FlatDBObj) =
+proc `=destroy`(db: var DatabaseObj) =
     discard mdbx_env_close(db.env)
 
 
-proc getDB(env: MDBX_env): FlatDB =
-    cast[FlatDB](mdbx_env_get_userctx(env))
+proc getDB(env: MDBX_env): Database =
+    cast[Database](mdbx_env_get_userctx(env))
 
 
-proc stats*(db: FlatDB): MDBX_stat =
+proc stats*(db: Database): MDBX_stat =
     ## Returns low-level information about the database file.
     check mdbx_env_stat_ex(db.env, nil, result, csize_t(sizeof(result)))
 
 
-proc path*(db: FlatDB): string =
+proc path*(db: Database): string =
     ## The filesystem path the database was opened with.
     var cpath: cstring
     check mdbx_env_get_path(db.env, cpath)
@@ -43,7 +43,7 @@ proc openDB*(path: string,
              flags: libmdbx.EnvFlags = kDefaultFlags,
              fileMode = kDefaultFileMode,
              minFileSize = kDefaultMinFileSize,
-             maxFileSize = kDefaultMaxFileSize): FlatDB =
+             maxFileSize = kDefaultMaxFileSize): Database =
     ## Opens a Database.
     ## * path: The filesystem path of the database directory
     ## * flags: libmdbx environment flags. Default is ``MDBX_LIFORECLAIM``. Other useful flags are
@@ -65,12 +65,12 @@ proc openDB*(path: string,
     check mdbx_env_set_maxdbs(env, kDefaultMaxDBIs)
     check mdbx_env_open(env, path, flags or MDBX_NOTLS, fileMode)
 
-    let db = FlatDB(env: env)
+    let db = Database(env: env)
     check mdbx_env_set_userctx(env, cast[pointer](db))
     return db
 
 
-proc close*(db: FlatDB) =
+proc close*(db: Database) =
     ## Closes a Database. It is illegal to reference the Database and objects derived from it --
     ## Collections, Snapshots, Transactions, Cursors -- afterwards.
     ## (The Database is also closed when its object is destroyed.)

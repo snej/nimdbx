@@ -8,7 +8,7 @@ type
         ## A read-only iterator over the keys/values of a Collection.
         curs {.requiresInit.}: MDBX_cursor
         owner: Snapshot
-        mdbKey, mdbVal: MDBX_val
+        mdbKey, mdbVal: Data
         positioned: bool
 
 
@@ -52,12 +52,12 @@ proc close*(curs: var Cursor) =
 
 
 proc op(curs: var Cursor, op: CursorOp): bool =
-    ## Lowest level cursor operation.
+    # Lowest level cursor operation.
     assert curs.curs != nil
-    result = checkOptional mdbx_cursor_get(curs.curs, curs.mdbKey, curs.mdbVal, op)
+    result = checkOptional mdbx_cursor_get(curs.curs, curs.mdbKey.val, curs.mdbVal.val, op)
     if not result:
-        curs.mdbKey = MDBX_val(base: nil, len: 0)
-        curs.mdbVal = MDBX_val(base: nil, len: 0)
+        curs.mdbKey.clear()
+        curs.mdbVal.clear()
     curs.positioned = true
 
 proc first*(curs: var Cursor): bool {.discardable.} =
@@ -95,49 +95,25 @@ proc seekExact*(curs: var Cursor, key: openarray[char]): bool {.discardable.} =
 ######## CURSOR ATTRIBUTES
 
 
-proc asInt64(val: MDBX_val): int64 =
-    if val.len != 8: throw(MDBX_BAD_VALSIZE)
-    return cast[ptr int64](val.base)[]
-proc asInt(val: MDBX_val): int =
-    if val.len == 4:
-        return cast[ptr int32](val.base)[]
-    elif val.len == 8 and sizeof(int) >= 8:
-        return int(cast[ptr int64](val.base)[])
-    else:
-        throw(MDBX_BAD_VALSIZE)
-
-proc key*(curs: var Cursor): string =
+proc key*(curs: var Cursor): lent Data =
     ## Returns the current key. If there is none, returns an empty string.
     assert curs.positioned
     return curs.mdbKey
 
-proc intKey*(curs: var Cursor): int =
-    assert curs.positioned
-    return asInt(curs.mdbKey)
-
-proc int64Key*(curs: var Cursor): int64 =
-    assert curs.positioned
-    return asInt64(curs.mdbKey)
-
-proc value*(curs: var Cursor): string =
+proc value*(curs: var Cursor): lent Data =
     ## Returns the current value as a string. If there is none, returns an empty string.
-    assert curs.positioned
-    return curs.mdbVal
-
-proc valueSeq*(curs: var Cursor): seq[uint8] =
-    ## Returns the current value as a ``seq[uint8]``. If there is none, returns an empty sequence.
     assert curs.positioned
     return curs.mdbVal
 
 proc valueLen*(curs: var Cursor): int =
     ## Returns the length of the current value, in bytes.
     assert curs.positioned
-    int(curs.mdbVal.len)
+    return int(curs.mdbVal.val.len)
 
 proc hasValue*(curs: var Cursor): bool =
     ## Returns true if the Cursor is at a valid key & value (i.e. is not past the end.)
     assert curs.positioned
-    return curs.mdbVal.base != nil
+    return curs.mdbVal.exists
 
 proc onFirst*(curs: Cursor): bool =
     ## Returns true if the cursor is positioned at the first key.
