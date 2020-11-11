@@ -95,10 +95,29 @@ proc seekExact*(curs: var Cursor, key: openarray[char]): bool {.discardable.} =
 ######## CURSOR ATTRIBUTES
 
 
+proc asInt64(val: MDBX_val): int64 =
+    if val.len != 8: throw(MDBX_BAD_VALSIZE)
+    return cast[ptr int64](val.base)[]
+proc asInt(val: MDBX_val): int =
+    if val.len == 4:
+        return cast[ptr int32](val.base)[]
+    elif val.len == 8 and sizeof(int) >= 8:
+        return int(cast[ptr int64](val.base)[])
+    else:
+        throw(MDBX_BAD_VALSIZE)
+
 proc key*(curs: var Cursor): string =
     ## Returns the current key. If there is none, returns an empty string.
     assert curs.positioned
     return curs.mdbKey
+
+proc intKey*(curs: var Cursor): int =
+    assert curs.positioned
+    return asInt(curs.mdbKey)
+
+proc int64Key*(curs: var Cursor): int64 =
+    assert curs.positioned
+    return asInt64(curs.mdbKey)
 
 proc value*(curs: var Cursor): string =
     ## Returns the current value as a string. If there is none, returns an empty string.

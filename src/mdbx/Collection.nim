@@ -85,7 +85,7 @@ type
     SnapshotObj = object of RootObj
         m_txn {.requiresInit.}: MDBX_txn
 
-    Snapshot*    = ref SnapshotObj
+    Snapshot* = ref SnapshotObj
         ## A read-only view of the database. The contents of this view are fixed at the moment the
         ## Snapshot was created and will not change, even if a concurrent Transaction commits
         ## changes.
@@ -222,13 +222,18 @@ proc inTransaction*(coll: Collection, fn: proc(t:CollectionTransaction)) =
 ######## COLLECTION VALUE ACCESS
 
 
-proc get*(snap: CollectionSnapshot, key: openarray[char]): string =
+proc asMDBX_val(a: openarray[char]): MDBX_val = MDBX_val(base: unsafeAddr a[0], len: csize_t(a.len))
+template asMDBX_val(i: int32): MDBX_val = MDBX_val(base: unsafeAddr i, len: 4)
+template asMDBX_val(i: int64): MDBX_val = MDBX_val(base: unsafeAddr i, len: 8)
+
+
+proc get*[K](snap: CollectionSnapshot, key: K): string =
     ## Looks up the value of a key in a Collection, and returns it as a (copied) string.
     ## If the key is not found, returns an empty string.
-    var mdbKey: MDBX_val = key
+    var mdbKey: MDBX_val = asMDBX_val(key)
     var mdbVal: MDBX_Val
     if checkOptional mdbx_get(snap.txn, snap.collection.dbi, mdbKey, mdbVal):
-        return mdbVal
+        return toString(mdbVal)
     else:
         return ""     # FIX: Should be something nil-like
 
@@ -258,12 +263,12 @@ proc get*(snap: CollectionSnapshot,
         fn(val.toOpenArray(0, int(mdbVal.len) - 1))
 
 
-proc i_put(t: CollectionTransaction, key: openarray[char], val: openarray[char], flags: UpdateFlags): MDBXErrorCode =
-    var mdbKey: MDBX_val = key
-    var mdbVal: MDBX_val = val
+proc i_put[K,V](t: CollectionTransaction, key: K, val: V, flags: UpdateFlags): MDBXErrorCode =
+    var mdbKey: MDBX_val = asMDBX_val(key)
+    var mdbVal: MDBX_val = asMDBX_val(val)
     return mdbx_put(t.txn, t.collection.dbi, mdbKey, mdbVal, flags)
 
-proc put*(t: CollectionTransaction, key: openarray[char], val: openarray[char]) =
+proc put*[K,V](t: CollectionTransaction, key: K, val: V) =
     ## Stores a value for a key in a Collection.
     check i_put(t, key, val, UpdateFlags(0))
 
@@ -313,6 +318,9 @@ proc del*(t: CollectionTransaction, key: openarray[char]): bool {.discardable.} 
     ## Returns true if the key existed, false if it doesn't exist.
     var mdbKey: MDBX_val = key
     return checkOptional mdbx_del(t.txn, t.collection.dbi, mdbKey, nil)
+
+
+######## COLLECTION METADATA
 
 
 proc i_sequence(s: CollectionSnapshot, thenAdd: uint64): uint64 =

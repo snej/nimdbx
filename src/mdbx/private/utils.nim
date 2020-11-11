@@ -34,7 +34,7 @@ type MDBXError* = object of CatchableError
     code*: MDBXErrorCode
 
 
-proc throw(code: MDBXErrorCode) {.noreturn.} =
+proc throw*(code: MDBXErrorCode) {.noreturn.} =
     var x = newException(MDBXError, $mdbx_strerror(cint(code)))
     x.code = code
     echo "**** Raising ", x.msg

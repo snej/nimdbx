@@ -100,6 +100,8 @@ test "Create record":
 test "Cursors":
     let db = openNewTestDB()
     let coll = db.createCollection("stuff")
+
+    echo "-- Add keys --"
     coll.inTransaction do (ct: CollectionTransaction):
         for i in 0..99:
             ct.put(&"key-{i:02}", &"the value is {i}.")
@@ -169,3 +171,33 @@ test "Cursors":
     check i == -1
 
     curs.close()
+
+
+test "Int Keys":
+    let db = openNewTestDB()
+    let coll = db.createCollection("stuff", {IntegerKeys})
+
+    echo "-- Add keys --"
+    coll.inTransaction do (ct: CollectionTransaction):
+        for i in 0..99:
+            ct.put(int32(i), &"the value is {i}.")
+        ct.commit()
+
+    echo "-- Get by key --"
+    var cs = coll.beginSnapshot()
+    for i in 0..99:
+        let val = cs.get(int32(i))
+        #echo i, " = ", val
+        check val == &"the value is {i}."
+
+    echo "-- Forwards iteration --"
+    var curs = makeCursor(cs)
+    var i = 0
+    while curs.next():
+        check i < 100
+        #echo curs.intKey, " = ", curs.value
+        check curs.intKey == i
+        check curs.value == &"the value is {i}."
+        i += 1
+    check i == 100
+
