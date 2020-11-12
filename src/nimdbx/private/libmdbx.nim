@@ -2,11 +2,11 @@
 ## Hand-translated from mdbx.h
 
 when defined(windows):
-  const libmdbx = "libmdbx.dll"
+  const libmdbx = "vendor\\libmdbx\\libmdbx.dll"
 elif defined(macosx):
-  const libmdbx = "libmdbx.dylib"
+  const libmdbx = "vendor/libmdbx/libmdbx.dylib"
 else:
-  const libmdbx = "libmdbx.so"
+  const libmdbx = "vendor/libmdbx/libmdbx.so"
 
 {.push dynlib: libmdbx.}
 
