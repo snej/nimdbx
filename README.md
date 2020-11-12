@@ -4,11 +4,11 @@ An extremely fast persistent key-value store for Nim, based on [libMDBX](https:/
 
 ## The Data Model
 
-Nimdbx manages **databases** stored as regular files.
-Each database can contain multiple **collections**.
-Each collection can contain any number of **keys** and their associated **values**.
-A collection lets you get and set values for keys.
-A **cursor** lets you iterate a collection's keys and values in order.
+- A **databases** is contained in a regular file.
+- Each database can contain multiple named **collections**.
+- Each collection can contain any number of **keys** and their associated **values**.
+- A collection lets you get and set values for keys.
+- A **cursor** lets you iterate a collection's keys and values in order.
 
 ### Keys and Values
 

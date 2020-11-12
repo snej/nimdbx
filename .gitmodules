@@ -1,0 +1,3 @@
+[submodule "vendor/libmdbx"]
+	path = vendor/libmdbx
+	url = ssh://git@github.com/leo-yuriev/libmdbx.git

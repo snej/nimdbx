@@ -81,7 +81,7 @@ proc prev*(curs: var Cursor): bool {.discardable.} =
     curs.op(if curs.positioned: MDBX_PREV else: MDBX_LAST)
 
 proc seek*(curs: var Cursor, key: openarray[char]): bool {.discardable.} =
-    ## Moves to the first key greater than or equal to the given key;
+    ## Moves to the first key _greater than or equal to_ the given key;
     ## returns false if there is none.
     curs.mdbKey = key
     curs.op(MDBX_SET_RANGE)
@@ -122,5 +122,12 @@ proc onFirst*(curs: Cursor): bool =
 proc onLast* (curs: Cursor): bool =
     ## Returns true if the cursor is positioned at the last key.
     curs.positioned and mdbx_cursor_on_last(curs.curs) == MDBX_RESULT_TRUE
+
+proc valueCount*(curs: Cursor): int =
+    ## Returns the number of values for the current key.
+    ## (This is always 1 unless the Collection supports ``DuplicateKeys``)
+    var count: csize_t
+    check mdbx_cursor_count(curs.curs, count)
+    return int(count)
 
 converter toBool*(curs: var Cursor): bool = curs.hasValue
