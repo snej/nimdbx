@@ -48,7 +48,7 @@ Because of this, it's important not to leave snapshots around too long. As long 
 
 ## "NimDBX" vs. "libmdbx"
 
-I'm not calling this a libmdbx "wrapper" because it doesn't present exactly the same API. For instance, I've renamed some entities, like "database" instead of "environment", and "collection" instead of "DBI". And I'm not committing myself to exposing every single feature of libmdbx.
+I'm not calling this a libmdbx "wrapper" because it doesn't present exactly the same API. For instance, I've renamed some entities, like "database" instead of "environment", "collection" instead of "DBI", "snapshot" instead of "read-only transaction". And I'm not committing myself to exposing every single feature of libmdbx.
 
 But yes, this is really just a thin Nim shell around the libmdbx C library.
 
