@@ -39,17 +39,17 @@ suite "Database":
 
     test "Sequences":
         var cs = coll.beginSnapshot()
-        check cs.sequence == 0
+        check cs.lastSequence == 0
 
         coll.inTransaction do (ct: CollectionTransaction):
-            check ct.sequence == 0
-            check ct.sequence(thenAdd = 1'u64) == 0
-            check ct.sequence(thenAdd = 3'u64) == 1
-            check ct.sequence == 4
+            check ct.lastSequence == 0
+            check ct.nextSequence() == 1
+            check ct.nextSequence(count=3) == 2   ## i.e. we get 2, 3, 4
+            check ct.lastSequence == 4
             ct.commit()
 
         cs = coll.beginSnapshot()
-        check cs.sequence == 4
+        check cs.lastSequence == 4
 
 
     test "Put and get record":

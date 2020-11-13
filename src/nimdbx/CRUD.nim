@@ -1,6 +1,7 @@
 # CRUD.nim
 
-import Collection, private/libmdbx, private/utils
+import Collection, Transaction, private/libmdbx, private/utils
+
 
 ######## KEY/VALUE DATA
 
