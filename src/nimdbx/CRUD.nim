@@ -25,12 +25,16 @@ proc clear*(d: var Data) =
 converter exists*(d: Data): bool = d.val.base != nil
 proc `not`*(d: Data): bool         = d.val.base == nil
 
-converter asData*(a: string): Data =
-    result.val = MDBX_val(base: unsafeAddr a[0], len: csize_t(a.len))
-converter asData*(a: openarray[char]): Data =
-    result.val = MDBX_val(base: unsafeAddr a[0], len: csize_t(a.len))
-converter asData*(a: openarray[byte]): Data =
-    result.val = MDBX_val(base: unsafeAddr a[0], len: csize_t(a.len))
+
+proc mkData[A](a: A): Data {.inline.} =
+    if a.len > 0:
+        result.val = MDBX_val(base: unsafeAddr a[0], len: csize_t(a.len))
+
+converter asData*(a: string): Data = mkData(a)
+converter asData*(a: seq[char]): Data = mkData(a)
+converter asData*(a: openarray[char]): Data = mkData(a)
+converter asData*(a: seq[byte]): Data = mkData(a)
+converter asData*(a: openarray[byte]): Data = mkData(a)
 
 converter asData*(i: int32): Data =
     result.i = i
@@ -46,6 +50,10 @@ converter asString*(d: Data): string =
 
 proc `$`*(d: Data): string = d.asString()
 
+converter asCharSeq*(d: Data): seq[char] =
+    result = newSeq[char](d.val.len)
+    if d.val.len > 0:
+        copyMem(addr result[0], d.val.base, d.val.len)
 converter asByteSeq*(d: Data): seq[byte] =
     result = newSeq[byte](d.val.len)
     if d.val.len > 0:

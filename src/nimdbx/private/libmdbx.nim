@@ -239,5 +239,7 @@ proc mdbx_cursor_del*(cursor: MDBX_cursor, flags: MDBXPutFlags): MDBXErrorCode  
 proc mdbx_cursor_count*(cursor: MDBX_cursor, count: var csize_t): MDBXErrorCode  {.importc: "mdbx_cursor_count".}
 proc mdbx_cursor_on_first*(cursor: MDBX_cursor): MDBXErrorCode  {.importc: "mdbx_cursor_on_first".}
 proc mdbx_cursor_on_last*(cursor: MDBX_cursor): MDBXErrorCode  {.importc: "mdbx_cursor_on_last".}
+proc mdbx_cursor_dbi*(cursor: MDBX_cursor): MDBX_dbi {.importc: "mdbx_cursor_dbi".}
 
+proc mdbx_cmp*(txn: MDBX_txn, dbi: MDBX_dbi, a: ptr MDBX_val, b: ptr MDBX_val): int  {.importc: "mdbx_cmp".}
 {.pop.}

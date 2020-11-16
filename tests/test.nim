@@ -98,12 +98,16 @@ suite "Database":
         check gotVal == true
 
 
-    test "Cursors":
-        echo "-- Add keys --"
+    proc createEntries() =
+        echo "-- Create 100 entries --"
         coll.inTransaction do (ct: CollectionTransaction):
             for i in 0..99:
                 ct.put(&"key-{i:02}", &"the value is {i}.")
             ct.commit()
+
+
+    test "Cursors":
+        createEntries()
 
         # NOTE: When using Cursor.key and Cursor.value with the `check` macro, you have to convert
         # the `Data` result to a specific type, otherwise the implementation of `check` will try to
@@ -160,10 +164,8 @@ suite "Database":
         check $curs.value == "the value is 99."
         check not curs.next()
 
-        echo "-- Create new cursor --"
-        curs = makeCursor(cs)
-
         echo "-- Reverse iteration --"
+        curs = makeCursor(cs)
         i = 99
         while curs.prev():
             check i >= 0
@@ -172,8 +174,26 @@ suite "Database":
             check $curs.value == &"the value is {i}."
             i -= 1
         check i == -1
-
         curs.close()
+
+        echo "-- 'for' loop with cursor"
+        i = 0
+        for key, value in cs:
+            check i < 100
+            check $key == &"key-{i:02}"
+            check $value == &"the value is {i}."
+            i += 1
+        check i == 100
+
+        echo "-- reverse 'for' loop with cursor"
+        i = 99
+        for key, value in cs.reversed:
+            check i < 100
+            check $key == &"key-{i:02}"
+            check $value == &"the value is {i}."
+            i -= 1
+        check i == -1
+
 
 
     test "Int Keys":
@@ -203,3 +223,70 @@ suite "Database":
             i += 1
         check i == 100
 
+
+    test "Cursor subranges":
+        createEntries()
+        var cs = coll.beginSnapshot()
+
+        proc checkCursor(minKey, maxKey: string;
+                         first, last: int;
+                         skipMin = false; skipMax = false) =
+            # Forwards:
+            echo "   -- forward"
+            var curs = makeCursor(cs)
+            if minKey != "": curs.minKey = minKey
+            if maxKey != "": curs.maxKey = maxKey
+            curs.skipMinKey = skipMin
+            curs.skipMaxKey = skipMax
+            var i = first
+            while curs.next():
+                #echo curs.key, " = ", curs.value
+                check $curs.key == &"key-{i:02}"
+                check $curs.value == &"the value is {i}."
+                check i <= last
+                i += 1
+            check i == last + 1
+
+            # Backwards:
+            echo "   -- reverse"
+            curs = makeCursor(cs)
+            if minKey != "": curs.minKey = minKey
+            if maxKey != "": curs.maxKey = maxKey
+            curs.skipMinKey = skipMin
+            curs.skipMaxKey = skipMax
+            i = last
+            while curs.prev():
+                #echo curs.key, " = ", curs.value
+                check $curs.key == &"key-{i:02}"
+                check $curs.value == &"the value is {i}."
+                check i >= first
+                i -= 1
+            check i == first - 1
+
+        echo "-- first"
+        checkCursor("key-10", "", 10, 99)
+        echo "-- first, out of range"
+        checkCursor("a", "", 0, 99)
+        echo "-- last"
+        checkCursor("", "key-20", 0, 20)
+        echo "-- last, out of range"
+        checkCursor("", "z", 0, 99)
+        echo "-- first and last"
+        checkCursor("key-10", "key-20", 10, 20)
+        echo "-- first and last, same key"
+        checkCursor("key-10", "key-10", 10, 10)
+        echo "-- first and last, empty range"
+        checkCursor("key-20", "key-10", 20, 19)
+        echo "-- first and last, too low"
+        checkCursor("a", "b", 0, -1)
+        echo "-- first and last, too high"
+        checkCursor("y", "z", 0, -1)
+
+        echo "-- skip first"
+        checkCursor("key-10", "", 11, 99, skipMin = true)
+        echo "-- skip last"
+        checkCursor("", "key-20", 0, 19, skipMax = true)
+        echo "-- skip first & last"
+        checkCursor("key-10", "key-20", 11, 19, skipMin = true, skipMax = true)
+        echo "-- skip first & last out of range"
+        checkCursor("a", "z", 0, 99, skipMin = true, skipMax = true)

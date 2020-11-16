@@ -9,6 +9,8 @@ type
         curs {.requiresInit.}: MDBX_cursor
         owner: Snapshot
         mdbKey, mdbVal: Data
+        minKey, maxKey: seq[char]
+        minKeyCmp, maxKeyCmp: int
         positioned: bool
 
 
@@ -19,7 +21,7 @@ proc `=destroy`(curs: var Cursor) =
         mdbx_cursor_close(curs.curs)
 
 
-proc makeCursor*(coll: Collection, snap: var Snapshot): Cursor =
+proc makeCursor*(coll: Collection, snap: Snapshot): Cursor =
     ## Creates a Cursor on a Collection in a Snapshot.
     ## The Cursor starts out at an undefined position and must be positioned before its key or value
     ## are accessed. Since the ``next`` function will move an unpositioned cursor to the first key,
@@ -33,7 +35,7 @@ proc makeCursor*(coll: Collection, snap: var Snapshot): Cursor =
     check mdbx_cursor_open(snap.txn, coll.dbi, curs)
     return Cursor(curs: curs, owner: snap)
 
-proc makeCursor*(snap: var CollectionSnapshot): Cursor =
+proc makeCursor*(snap: CollectionSnapshot): Cursor =
     ## Creates a Cursor on a Collection in a Snapshot.
     return makeCursor(snap.collection, snap.snapshot)
 
@@ -48,37 +50,44 @@ proc close*(curs: var Cursor) =
         curs.positioned = false
 
 
+proc minKey*(curs: Cursor): Data =  curs.minKey
+    ## The minimum key to iterate over, if any.
+
+proc `minKey=`*(curs: var Cursor, key: Data) =  curs.minKey = key
+    ## Sets minimum key to iterate over, if any.
+
+proc maxKey*(curs: Cursor): Data =  curs.maxKey
+    ## The maximum key to iterate over, if any.
+
+proc `maxKey=`*(curs: var Cursor, key: Data) =  curs.maxKey = key
+    ## Sets the maximum key to iterate over, if any.
+
+proc `skipMinKey=`*(curs: var Cursor, skip: bool) =  curs.minKeyCmp = (if skip:  1 else: 0)
+proc `skipMaxKey=`*(curs: var Cursor, skip: bool) =  curs.maxKeyCmp = (if skip: -1 else: 0)
+
+proc compareKey*(curs: Cursor, withKey: Data): int =
+    ## Compares the Cursor's current key with the given value, according to the Collection's
+    ## sort order.
+    ## Returns 1 if the cursor's key is greater, 0 if equal, -1 if ``withKey`` is greater.
+    assert curs.positioned
+    return mdbx_cmp(curs.owner.txn, mdbx_cursor_dbi(curs.curs),
+                    unsafeAddr curs.mdbKey.val, unsafeAddr withKey.val)
+
 ######## CURSOR POSITIONING:
 
+
+proc clr(curs: var Cursor): bool    = curs.mdbKey.clear(); curs.mdbVal.clear(); return false
+proc pastMinKey(curs: Cursor): bool = curs.compareKey(curs.minKey) < curs.minKeyCmp
+proc pastMaxKey(curs: Cursor): bool = curs.compareKey(curs.maxKey) > curs.maxKeyCmp
 
 proc op(curs: var Cursor, op: CursorOp): bool =
     # Lowest level cursor operation.
     assert curs.curs != nil
     result = checkOptional mdbx_cursor_get(curs.curs, curs.mdbKey.val, curs.mdbVal.val, op)
     if not result:
-        curs.mdbKey.clear()
-        curs.mdbVal.clear()
+        result = curs.clr()
     curs.positioned = true
 
-proc first*(curs: var Cursor): bool {.discardable.} =
-    ## Moves to the first key in the Collection; returns false if there is none.
-    curs.op(MDBX_FIRST)
-
-proc last*(curs: var Cursor): bool {.discardable.} =
-    ## Moves to the last key in the Collection; returns false if there is none.
-    curs.op(MDBX_LAST)
-
-proc next*(curs: var Cursor): bool {.discardable.} =
-    ## Moves to the next key; returns false if there is none.
-    ## If this is the first movement of this cursor (i.e. the cursor is not yet at a defined
-    ## position), it moves to the first key, if there is one.
-    curs.op(if curs.positioned: MDBX_NEXT else: MDBX_FIRST)
-
-proc prev*(curs: var Cursor): bool {.discardable.} =
-    ## Moves to the previous key; returns false if there is none.
-    ## If this is the first movement of this cursor (i.e. the cursor is not yet at a defined
-    ## position), it moves to the last key, if there is one.
-    curs.op(if curs.positioned: MDBX_PREV else: MDBX_LAST)
 
 proc seek*(curs: var Cursor, key: openarray[char]): bool {.discardable.} =
     ## Moves to the first key _greater than or equal to_ the given key;
@@ -86,22 +95,71 @@ proc seek*(curs: var Cursor, key: openarray[char]): bool {.discardable.} =
     curs.mdbKey = key
     curs.op(MDBX_SET_RANGE)
 
+
 proc seekExact*(curs: var Cursor, key: openarray[char]): bool {.discardable.} =
     ## Moves to the _exact_ key given; returns false if it isn't found.
     curs.mdbKey = key
     curs.op(MDBX_SET_KEY)
 
 
+proc first*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the first key in range; returns false if there is none.
+    if curs.minKey.len == 0:
+        return curs.op(MDBX_FIRST)
+    result = curs.seek(curs.minKey)
+    if result and curs.minKeyCmp != 0 and curs.pastMinKey():
+        # Skip first key
+        result = curs.op(MDBX_NEXT)
+    if result and curs.maxKey.len > 0 and curs.pastMaxKey():
+        # First key is after maxKey, so don't include it
+        result = curs.clr()
+
+
+proc last*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the last key in range; returns false if there is none.
+    if curs.maxKey.len == 0:
+        return curs.op(MDBX_LAST)
+    result = curs.seek(curs.maxKey) or curs.op(MDBX_LAST)
+    if result and curs.pastMaxKey():
+        # The seek overshot, so I need to go back one (or else I'm skipping the exact max key)
+        result = curs.op(MDBX_PREV)
+    if result and curs.minKey.len > 0 and curs.pastMinKey():
+        # Last key is before minKey, so don't include it
+        result = curs.clr()
+
+
+proc next*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the next key; returns false if there is none.
+    ## If this is the first movement of this cursor (i.e. the cursor is not yet at a defined
+    ## position), it moves to the first key, if there is one.
+    if not curs.positioned:
+        return curs.first()
+    result = curs.op(MDBX_NEXT)
+    if result and curs.maxKey.len > 0 and curs.pastMaxKey():
+        result = curs.clr()
+
+
+proc prev*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the previous key; returns false if there is none.
+    ## If this is the first movement of this cursor (i.e. the cursor is not yet at a defined
+    ## position), it moves to the last key, if there is one.
+    if not curs.positioned:
+        return curs.last()
+    result = curs.op(MDBX_PREV)
+    if result and curs.minKey.len > 0 and curs.pastMinKey():
+        result = curs.clr()
+
+
 ######## CURSOR ATTRIBUTES
 
 
 proc key*(curs: var Cursor): lent Data =
-    ## Returns the current key. If there is none, returns an empty string.
+    ## Returns the current key, if any.
     assert curs.positioned
     return curs.mdbKey
 
 proc value*(curs: var Cursor): lent Data =
-    ## Returns the current value as a string. If there is none, returns an empty string.
+    ## Returns the current value, if any.
     assert curs.positioned
     return curs.mdbVal
 
@@ -116,11 +174,11 @@ proc hasValue*(curs: var Cursor): bool =
     return curs.mdbVal.exists
 
 proc onFirst*(curs: Cursor): bool =
-    ## Returns true if the cursor is positioned at the first key.
+    ## Returns true if the cursor is positioned at the first key of the collection.
     curs.positioned and mdbx_cursor_on_first(curs.curs) == MDBX_RESULT_TRUE
 
 proc onLast* (curs: Cursor): bool =
-    ## Returns true if the cursor is positioned at the last key.
+    ## Returns true if the cursor is positioned at the last key of the collection.
     curs.positioned and mdbx_cursor_on_last(curs.curs) == MDBX_RESULT_TRUE
 
 proc valueCount*(curs: Cursor): int =
@@ -131,3 +189,45 @@ proc valueCount*(curs: Cursor): int =
     return int(count)
 
 converter toBool*(curs: var Cursor): bool = curs.hasValue
+    ## A Cursor can be tested as a bool, to check if it has a value.
+
+
+######## ITERATORS
+
+
+iterator pairs*(curs: var Cursor): (Data, Data) {.inline.} =
+    ## This iterator lets you write a ``for`` loop over a Cursor:
+    ## ``for key, value in cursor: ...``
+    defer: curs.close()
+    while curs.next():
+        # Construct new `Data`s as a workaround since `key` and `val` cannot be copied
+        yield (Data(val: curs.key.val), Data(val: curs.value.val))
+
+
+iterator reversed*(curs: var Cursor): (Data, Data) {.inline.} =
+    ## This iterator lets you write a reverse-order ``for`` loop over a Cursor:
+    ## ``for key, value in cursor.reversed: ...``
+    defer: curs.close()
+    while curs.prev():
+        # Construct new `Data`s as a workaround since `key` and `val` cannot be copied
+        yield (Data(val: curs.key.val), Data(val: curs.value.val))
+
+
+iterator pairs*(snap: CollectionSnapshot): (Data, Data) {.inline.} =
+    ## This iterator lets you write a ``for`` loop over a CollectionSnapshot:
+    ## ``for key, value in coll.with(snap): ...``
+    var curs = makeCursor(snap)
+    defer: curs.close()
+    while curs.next():
+        # Construct new `Data`s as a workaround since `key` and `val` cannot be copied
+        yield (Data(val: curs.key.val), Data(val: curs.value.val))
+
+
+iterator reversed*(snap: CollectionSnapshot): (Data, Data) {.inline.} =
+    ## This iterator lets you write a reverse-order ``for`` loop over a CollectionSnapshot:
+    ## ``for key, value in coll.with(snap).reversed: ...``
+    var curs = makeCursor(snap)
+    defer: curs.close()
+    while curs.prev():
+        # Construct new `Data`s as a workaround since `key` and `val` cannot be copied
+        yield (Data(val: curs.key.val), Data(val: curs.value.val))
