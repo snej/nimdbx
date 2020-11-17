@@ -15,7 +15,7 @@ proc throw*(code: MDBXErrorCode) {.noreturn.} =
     ## Raises an MDBXErrorCode as a Nim exception.
     var x = newException(MDBXError, $mdbx_strerror(cint(code)))
     x.code = code
-    echo "**** Raising ", x.msg # TEMP
+    echo "**** libmdbx error ", int(code), ": ", x.msg # TEMP
     raise x
 
 

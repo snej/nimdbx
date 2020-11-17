@@ -16,7 +16,7 @@ type Data* = object
 # Disallow copying `Data`, to discourage keeping it around. A `Data` value becomes invalid when
 # the Snapshot or Transaction used to get it ends, because it points to an address inside the
 # memory-mapped database.
-proc `=`(dst: var Data, src: Data) {.error.} = echo "(can't copy a Data)"
+proc `=`(dst: var Data, src: Data) {.error.}
 
 
 proc clear*(d: var Data) =

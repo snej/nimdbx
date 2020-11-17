@@ -27,8 +27,8 @@ type
         ## processes.
 
 
-proc `=`(dst: var SnapshotObj, src: SnapshotObj) {.error.} = echo "(can't copy a SnapshotObj)"
-proc `=sink`(dst: var SnapshotObj, src: SnapshotObj) {.error.} = echo "(can't copy a SnapshotObj)"
+proc `=`(dst: var SnapshotObj, src: SnapshotObj) {.error.}
+proc `=sink`(dst: var SnapshotObj, src: SnapshotObj) {.error.}
 proc `=destroy`(snap: var SnapshotObj) =
     if snap.m_txn != nil and snap.m_db.isOpen:
         discard mdbx_txn_abort(snap.m_txn)

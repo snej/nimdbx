@@ -14,7 +14,7 @@ type
         positioned: bool
 
 
-proc `=`(dst: var Cursor, src: Cursor) {.error.} = echo "(can't copy a Cursor)"
+proc `=`(dst: var Cursor, src: Cursor) {.error.}
 
 proc `=destroy`(curs: var Cursor) =
     if curs.curs != nil:
