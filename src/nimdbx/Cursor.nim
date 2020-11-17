@@ -40,6 +40,21 @@ proc makeCursor*(snap: CollectionSnapshot): Cursor =
     return makeCursor(snap.collection, snap.snapshot)
 
 
+const NoKey* = NoData
+    ## Use this to denote a missing end of a key range, e.g. ``["a"..NoKey]`` or ``[NoKey.."z"]``.
+
+proc `[]`*[T,U](snap: CollectionSnapshot, range: HSlice[T,U]): Cursor =
+    ## Convenience to create a cursor by subscripting a CollectionSnapshot with a key range:
+    ## ```
+    ## for (key,value) in cs["a" .. "z"]:
+    ## ```
+    ## Use ``NoKey`` to denote no limit, so for 'everthing starting from "a"' use
+    ## ``["a" .. NoKey]``.
+    result = makeCursor(snap)
+    result.minKey = Data(range.a)
+    result.maxKey = Data(range.b)
+
+
 proc close*(curs: var Cursor) =
     ## Closes a Cursor, freeing its underlying resources. The Cursor may not be used again.
     ## (This happens automatically when a Cursor is destroyed, but you may want to do it earlier.)

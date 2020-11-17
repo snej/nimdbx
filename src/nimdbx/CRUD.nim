@@ -23,7 +23,7 @@ proc clear*(d: var Data) =
     d.val = MDBX_val(base: nil, len: 0)
 
 converter exists*(d: Data): bool = d.val.base != nil
-proc `not`*(d: Data): bool         = d.val.base == nil
+proc `not`*(d: Data): bool       = d.val.base == nil
 
 
 proc mkData[A](a: A): Data {.inline.} =
@@ -70,6 +70,11 @@ converter asInt64*(d: Data): int64 =
     else:
         throw(MDBX_BAD_VALSIZE)
 
+type NoData_t* = distinct int
+const NoData* = NoData_t(0)
+    # A special constant that denotes a nil Data value.
+
+converter asData*(n: NoData_t): Data = Data(val: MDBX_val(base: nil, len: 0))
 
 ######## COLLECTION VALUE GETTERS
 

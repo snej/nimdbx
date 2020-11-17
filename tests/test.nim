@@ -290,3 +290,19 @@ suite "Database":
         checkCursor("key-10", "key-20", 11, 19, skipMin = true, skipMax = true)
         echo "-- skip first & last out of range"
         checkCursor("a", "z", 0, 99, skipMin = true, skipMax = true)
+
+
+    test "Cursor subranges via subscripts":
+        createEntries()
+        var cs = coll.beginSnapshot()
+        var curs = cs["a".."z"]
+        check curs.minKey == "a"
+        check curs.maxKey == "z"
+
+        curs = cs[NoKey.."z"]
+        check not curs.minKey.exists
+        check curs.maxKey == "z"
+
+        curs = cs["a"..NoKey]
+        check curs.minKey == "a"
+        check not curs.maxKey.exists
