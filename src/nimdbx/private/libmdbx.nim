@@ -20,6 +20,10 @@ getHeader(
     altNames = "libmdbx"           # Alterate names of the library binary, full path returned in `headerLPath`
 )
 
+# Linker flags for the Nim binary being built (libmxbx is statically linked but it uses pthreads)
+when defined(linux):
+    {.passL: "-lpthread".}
+
 #### Configuration for generating the Nim header wrapper:
 
 # Skip some symbols:
