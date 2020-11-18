@@ -6,7 +6,7 @@ import Collection, CRUD, Transaction, private/libmdbx, private/utils
 type
     Cursor* = object of RootObj
         ## A read-only iterator over the keys/values of a Collection.
-        curs {.requiresInit.}: MDBX_cursor
+        curs {.requiresInit.}: ptr MDBX_cursor
         owner: Snapshot
         mdbKey, mdbVal: Data
         minKey, maxKey: seq[char]
@@ -31,8 +31,8 @@ proc makeCursor*(coll: Collection, snap: Snapshot): Cursor =
     ##     while curs.next():
     ##         doSomethingWith(curs.key, curs.value)
     ## ```
-    var curs: MDBX_cursor
-    check mdbx_cursor_open(snap.txn, coll.dbi, curs)
+    var curs: ptr MDBX_cursor
+    check mdbx_cursor_open(snap.txn, coll.dbi, addr curs)
     return Cursor(curs: curs, owner: snap)
 
 proc makeCursor*(snap: CollectionSnapshot): Cursor =
@@ -95,10 +95,10 @@ proc clr(curs: var Cursor): bool    = curs.mdbKey.clear(); curs.mdbVal.clear(); 
 proc pastMinKey(curs: Cursor): bool = curs.compareKey(curs.minKey) < curs.minKeyCmp
 proc pastMaxKey(curs: Cursor): bool = curs.compareKey(curs.maxKey) > curs.maxKeyCmp
 
-proc op(curs: var Cursor, op: CursorOp): bool =
+proc op(curs: var Cursor, op: MDBX_cursor_op): bool =
     # Lowest level cursor operation.
     assert curs.curs != nil
-    result = checkOptional mdbx_cursor_get(curs.curs, curs.mdbKey.val, curs.mdbVal.val, op)
+    result = checkOptional mdbx_cursor_get(curs.curs, addr curs.mdbKey.val, addr curs.mdbVal.val, op)
     if not result:
         result = curs.clr()
     curs.positioned = true
@@ -200,7 +200,7 @@ proc valueCount*(curs: Cursor): int =
     ## Returns the number of values for the current key.
     ## (This is always 1 unless the Collection supports ``DuplicateKeys``)
     var count: csize_t
-    check mdbx_cursor_count(curs.curs, count)
+    check mdbx_cursor_count(curs.curs, addr count)
     return int(count)
 
 converter toBool*(curs: var Cursor): bool = curs.hasValue

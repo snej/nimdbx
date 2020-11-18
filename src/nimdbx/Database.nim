@@ -4,7 +4,7 @@ from os import nil
 
 type
     DatabaseObj* = object
-        m_env {.requiresInit.}: MDBX_env
+        m_env {.requiresInit.}: ptr MDBX_env
         #openDBIMutex: mutex    # TODO: Implement this
 
     Database* = ref DatabaseObj
@@ -49,7 +49,7 @@ proc existsDatabase*(path: string): bool =
 proc deleteDatabase*(path: string, mode = EnsureUnused) =
     ## Deletes the Database directory at the given path.
     ## The file must not be open!
-    check mdbx_env_delete(path, MDBXEnvDeleteMode(mode))
+    check mdbx_env_delete(path, MDBX_env_delete_mode_t(mode))
 
 proc eraseDatabase*(path: string) =
     ## Erases the contents of a Database at the given path, by emptying the directory.
@@ -71,8 +71,8 @@ const kEnvFlags = [MDBX_NOSUBDIR,  # These *MUST* exactly match the DatabaseFlag
                    MDBX_NOMETASYNC,
                    MDBX_SAFE_NOSYNC,
                    MDBX_UTTERLY_NOSYNC]
-proc convertFlags(flags: DatabaseFlags): EnvFlags =
-    result = EnvFlags(0)
+proc convertFlags(flags: DatabaseFlags): MDBX_env_flags_t =
+    result = MDBX_env_flags_t(0)
     for bit in 0..<kEnvFlags.len:
         if (cast[uint](flags) and uint(1 shl bit)) != 0:
             result = result or kEnvFlags[bit]
@@ -107,8 +107,8 @@ proc openDatabase*(path: string,
     ## * fileShrinksBy: How much free space will cause the file to shrink
     ## * pageSize: Size of a database page
     ## * maxCollections: The maximum number of Collections you will open in this session
-    var env: MDBX_env
-    check mdbx_env_create(env)
+    var env: ptr MDBX_env
+    check mdbx_env_create(addr env)
     result = Database(m_env: env)
     check mdbx_env_set_geometry(env,
                                 minFileSize,        # lower bound
@@ -118,11 +118,11 @@ proc openDatabase*(path: string,
                                 fileShrinksBy,      # shrink threshold
                                 pageSize)           # page size
     check mdbx_env_set_maxdbs(env, uint32(maxCollections))
-    check mdbx_env_open(env, path, convertFlags(flags), fileMode)
+    check mdbx_env_open(env, path, convertFlags(flags), mdbx_mode_t(fileMode))
     check mdbx_env_set_userctx(env, cast[pointer](result))  # In case something needs it later
 
 
-proc getDB(env: MDBX_env): Database =
+proc getDB(env: ptr MDBX_env): Database =
     cast[Database](mdbx_env_get_userctx(env))
 
 
@@ -132,26 +132,26 @@ proc isOpen*(db: Database): bool {.inline.} =
 proc mustBeOpen*(db: Database) =
     if not db.isOpen: raise newException(CatchableError, "Using already-closed Database")
 
-proc env*(db: Database): MDBX_env =
+proc env*(db: Database): ptr MDBX_env =
     if db.m_env == nil: raise newException(CatchableError, "Database has been closed")
     return db.m_env
 
 
 proc stats*(db: Database): MDBX_stat =
     ## Returns low-level information about the database file.
-    check mdbx_env_stat_ex(db.env, nil, result, csize_t(sizeof(result)))
+    check mdbx_env_stat_ex(db.env, nil, addr result, csize_t(sizeof(result)))
 
 
 proc path*(db: Database): string =
     ## The filesystem path the database was opened with.
     var cpath: cstring
-    check mdbx_env_get_path(db.env, cpath)
+    check mdbx_env_get_path(db.env, addr cpath)
     return $cpath
 
 
 proc copyTo*(db: Database, path: string, flags: CopyDBFlags = {}) =
     ## Copies an open Database to a new file.
-    check mdbx_env_copy(db.env, path, MDBXCopyFlags(cast[uint](flags)))
+    check mdbx_env_copy(db.env, path, MDBX_copy_flags_t(cast[uint](flags)))
 
 
 proc close*(db: Database) =

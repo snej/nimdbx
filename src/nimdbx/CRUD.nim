@@ -83,7 +83,8 @@ proc get*(snap: CollectionSnapshot, key: Data): Data =
     ## Looks up the value of a key in a Collection. Returns the value, or nil Data if not found.
     ## As with all "get" operations, the value is valid (the memory it points to will be unchanged)
     ## until the enclosing Snapshot finishes. It points into the memory-mapped database, not a copy.
-    if not checkOptional mdbx_get(snap.txn, snap.collection.dbi, key.val, result.val):
+    if not checkOptional mdbx_get(snap.txn, snap.collection.dbi,
+                                  unsafeAddr key.val, addr result.val):
         result.clear()
 
 proc `[]`*(snap: CollectionSnapshot, key: Data): Data = snap.get(key)
@@ -95,7 +96,8 @@ proc getGreaterOrEqual*(snap: CollectionSnapshot, key: var Data): Data =
     ## If found, returns its value and updates ``key`` to the actual key.
     ## If not found, returns nil Data and sets ``key`` to nil.
     var value: Data
-    if checkOptional mdbx_get_equal_or_great(snap.txn, snap.collection.dbi, key.val, value.val):
+    if checkOptional mdbx_get_equal_or_great(snap.txn, snap.collection.dbi,
+                                             addr key.val, addr value.val):
         return value
     else:
         key.clear()
@@ -109,7 +111,8 @@ proc get*(snap: CollectionSnapshot,
     ## function as an ``openarray``, _without copying_, then returns true.
     ## If not found, the callback is not called, and the result is false.
     var mdbVal: MDBX_val
-    result = checkOptional mdbx_get(snap.txn, snap.collection.dbi, key.val, mdbVal)
+    result = checkOptional mdbx_get(snap.txn, snap.collection.dbi,
+                                    unsafeAddr key.val, addr mdbVal)
     if result:
         let valPtr = cast[ptr UncheckedArray[char]](mdbVal.base)
         fn(valPtr.toOpenArray(0, int(mdbVal.len) - 1))
@@ -134,15 +137,15 @@ type
 const kPutFlags = [MDBX_NOOVERWRITE, MDBX_CURRENT, MDBX_APPEND,
                    MDBX_ALLDUPS, MDBX_NODUPDATA, MDBX_APPENDDUP]
 
-proc convertFlags(flags: PutFlags): MDBXPutFlags =
-    result = MDBXPutFlags(0)
+proc convertFlags(flags: PutFlags): MDBX_put_flags_t =
+    result = MDBX_put_flags_t(0)
     for bit in 0..5:
         if (cast[uint](flags) and uint(1 shl bit)) != 0:
             result = result or kPutFlags[bit]
 
-proc i_put(t: CollectionTransaction, key: Data, value: Data, mdbxFlags: MDBXPutFlags): MDBXErrorCode =
+proc i_put(t: CollectionTransaction, key: Data, value: Data, mdbxFlags: MDBX_put_flags_t): MDBX_error_t =
     var rawVal = value.val
-    let err = mdbx_put(t.txn, t.collection.dbi, key.val, rawVal, mdbxFlags)
+    let err = MDBX_error_t(mdbx_put(t.txn, t.collection.dbi, unsafeAddr key.val, addr rawVal, mdbxFlags))
     case err:
         of MDBX_SUCCESS, MDBX_KEYEXIST, MDBX_NOTFOUND, MDBX_EMULTIVAL:
             return err
@@ -155,7 +158,8 @@ proc put*(t: CollectionTransaction, key: Data, value: Data) =
     if value:
         check t.i_put(key, value, MDBX_UPSERT)
     else:
-        discard checkOptional mdbx_del(t.txn, t.collection.dbi, key.val, nil)
+        discard checkOptional mdbx_del(t.txn, t.collection.dbi,
+                                       unsafeAddr key.val, nil)
 
 proc `[]=`*(t: CollectionTransaction, key: Data, value: Data) = t.put(key, value)
     ## Syntactic sugar for a simple ``put``.
@@ -197,7 +201,7 @@ proc put*(t: CollectionTransaction, key: Data, valueLen: int, flags: PutFlags,
     ## If the write was prevented because of a flag (for example, if ``Insert`` given but a value
     ## already exists) the function returns ``false`` instead of calling the callback.
     var mdbVal = MDBX_val(base: nil, len: csize_t(valueLen))
-    let err = mdbx_put(t.txn, t.collection.dbi, key.val, mdbVal,
+    let err = mdbx_put(t.txn, t.collection.dbi, unsafeAddr key.val, addr mdbVal,
                        convertFlags(flags) or MDBX_RESERVE)
     if err==MDBX_KEYEXIST or err==MDBX_NOTFOUND or err==MDBX_EMULTIVAL:
         return false
@@ -219,7 +223,7 @@ proc putDuplicates*(t: CollectionTransaction, key: Data,
     vals[0].len = csizet(values.len div valueCount)
     vals[0].base = unsafeAddr values[0]
     vals[1].len = csizet(valueCount)
-    check mdbx_put_PTR(t.txn, t.collection.dbi, unsafeAddr key.val, addr vals[0],
+    check mdbx_put(t.txn, t.collection.dbi, unsafeAddr key.val, addr vals[0],
                        convertFlags(flags) or MDBX_MULTIPLE)
     # Note: `mdbx_put_PTR` is actually the same C function as `mdbx_put`, just declared in
     # libmdbx.nim as a proc that takes key/value as `ptr` instead of `var`, so that 2 MDBX_vals
@@ -235,7 +239,7 @@ proc putDuplicates*(t: CollectionTransaction, key: Data,
 proc del*(t: CollectionTransaction, key: Data): bool {.discardable.} =
     ## Removes a key and its value from a Collection.
     ## Returns true if the key existed, false if it doesn't exist.
-    return checkOptional mdbx_del(t.txn, t.collection.dbi, key.val, nil)
+    return checkOptional mdbx_del(t.txn, t.collection.dbi, unsafeAddr key.val, nil)
 
 
 proc delAll*(t: CollectionTransaction) =
