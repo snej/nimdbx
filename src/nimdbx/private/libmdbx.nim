@@ -44,9 +44,9 @@ cOverride:
         mdbx_pid_t* = cint
         mdbx_tid_t* = pointer
         mdbx_mode_t* = cint
-        MDBX_val* = object
-            base*: pointer
-            len*: csize_t
+        MDBX_val*  {.bycopy.} = object
+            iov_base*: pointer
+            iov_len*: csize_t
 
 # Now generate the Nim interface:
 cImport(mdbxPath, recurse = true)

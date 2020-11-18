@@ -20,15 +20,15 @@ proc `=`(dst: var Data, src: Data) {.error.}
 
 
 proc clear*(d: var Data) =
-    d.val = MDBX_val(base: nil, len: 0)
+    d.val = MDBX_val(iov_base: nil, iov_len: 0)
 
-converter exists*(d: Data): bool = d.val.base != nil
-proc `not`*(d: Data): bool       = d.val.base == nil
+converter exists*(d: Data): bool = d.val.iov_base != nil
+proc `not`*(d: Data): bool       = d.val.iov_base == nil
 
 
 proc mkData[A](a: A): Data {.inline.} =
     if a.len > 0:
-        result.val = MDBX_val(base: unsafeAddr a[0], len: csize_t(a.len))
+        result.val = MDBX_val(iov_base: unsafeAddr a[0], iov_len: csize_t(a.len))
 
 converter asData*(a: string): Data = mkData(a)
 converter asData*(a: seq[char]): Data = mkData(a)
@@ -37,36 +37,36 @@ converter asData*(a: seq[byte]): Data = mkData(a)
 converter asData*(a: openarray[byte]): Data = mkData(a)
 
 converter asData*(i: int32): Data =
-    result.i = i
-    result.val = MDBX_val(base: addr result.i, len: 4) #FIX: Endian dependent
+    copyMem(addr result.i, unsafeAddr i, 4)
+    result.val = MDBX_val(iov_base: addr result.i, iov_len: 4)
 converter asData*(i: int64): Data =
     result.i = i
-    result.val = MDBX_val(base: addr result.i, len: 8)
+    result.val = MDBX_val(iov_base: addr result.i, iov_len: 8)
 
 converter asString*(d: Data): string =
-    result = newString(d.val.len)
-    if d.val.len > 0:
-        copyMem(addr result[0], d.val.base, d.val.len)
+    result = newString(d.val.iov_len)
+    if d.val.iov_len > 0:
+        copyMem(addr result[0], d.val.iov_base, d.val.iov_len)
 
 proc `$`*(d: Data): string = d.asString()
 
 converter asCharSeq*(d: Data): seq[char] =
-    result = newSeq[char](d.val.len)
-    if d.val.len > 0:
-        copyMem(addr result[0], d.val.base, d.val.len)
+    result = newSeq[char](d.val.iov_len)
+    if d.val.iov_len > 0:
+        copyMem(addr result[0], d.val.iov_base, d.val.iov_len)
 converter asByteSeq*(d: Data): seq[byte] =
-    result = newSeq[byte](d.val.len)
-    if d.val.len > 0:
-        copyMem(addr result[0], d.val.base, d.val.len)
+    result = newSeq[byte](d.val.iov_len)
+    if d.val.iov_len > 0:
+        copyMem(addr result[0], d.val.iov_base, d.val.iov_len)
 
 converter asInt32*(d: Data): int32 =
-    if d.val.len != 4: throw(MDBX_BAD_VALSIZE)
-    return cast[ptr int32](d.val.base)[]
+    if d.val.iov_len != 4: throw(MDBX_BAD_VALSIZE)
+    return cast[ptr int32](d.val.iov_base)[]
 converter asInt64*(d: Data): int64 =
-    if d.val.len == 4:
-        return cast[ptr int32](d.val.base)[]
-    elif d.val.len == 8:
-        return cast[ptr int64](d.val.base)[]
+    if d.val.iov_len == 4:
+        return cast[ptr int32](d.val.iov_base)[]
+    elif d.val.iov_len == 8:
+        return cast[ptr int64](d.val.iov_base)[]
     else:
         throw(MDBX_BAD_VALSIZE)
 
@@ -74,7 +74,7 @@ type NoData_t* = distinct int
 const NoData* = NoData_t(0)
     # A special constant that denotes a nil Data value.
 
-converter asData*(n: NoData_t): Data = Data(val: MDBX_val(base: nil, len: 0))
+converter asData*(n: NoData_t): Data = Data(val: MDBX_val(iov_base: nil, iov_len: 0))
 
 ######## COLLECTION VALUE GETTERS
 
@@ -114,8 +114,8 @@ proc get*(snap: CollectionSnapshot,
     result = checkOptional mdbx_get(snap.txn, snap.collection.dbi,
                                     unsafeAddr key.val, addr mdbVal)
     if result:
-        let valPtr = cast[ptr UncheckedArray[char]](mdbVal.base)
-        fn(valPtr.toOpenArray(0, int(mdbVal.len) - 1))
+        let valPtr = cast[ptr UncheckedArray[char]](mdbVal.iov_base)
+        fn(valPtr.toOpenArray(0, int(mdbVal.iov_len) - 1))
 
 
 ######## COLLECTION "PUT" OPERATIONS
@@ -200,14 +200,14 @@ proc put*(t: CollectionTransaction, key: Data, valueLen: int, flags: PutFlags,
     ## This eliminates a memory-copy inside libmdbx, and might save you some allocation.
     ## If the write was prevented because of a flag (for example, if ``Insert`` given but a value
     ## already exists) the function returns ``false`` instead of calling the callback.
-    var mdbVal = MDBX_val(base: nil, len: csize_t(valueLen))
+    var mdbVal = MDBX_val(iov_base: nil, iov_len: csize_t(valueLen))
     let err = mdbx_put(t.txn, t.collection.dbi, unsafeAddr key.val, addr mdbVal,
                        convertFlags(flags) or MDBX_RESERVE)
     if err==MDBX_KEYEXIST or err==MDBX_NOTFOUND or err==MDBX_EMULTIVAL:
         return false
     check err
     # Now pass the value pointer/size to the caller to fill in:
-    let valPtr = cast[ptr UncheckedArray[char]](mdbVal.base)
+    let valPtr = cast[ptr UncheckedArray[char]](mdbVal.iov_base)
     fn(valPtr.toOpenArray(0, valueLen - 1))
 
 
@@ -220,9 +220,9 @@ proc putDuplicates*(t: CollectionTransaction, key: Data,
     assert values.len mod valueCount == 0
     # The way the values are passed with MDBX_MULTIPLE is *really* weird; see the libmdbx docs.
     var vals: array[2, MDBX_val]
-    vals[0].len = csizet(values.len div valueCount)
-    vals[0].base = unsafeAddr values[0]
-    vals[1].len = csizet(valueCount)
+    vals[0].iov_len = csizet(values.len div valueCount)
+    vals[0].iov_base = unsafeAddr values[0]
+    vals[1].iov_len = csizet(valueCount)
     check mdbx_put(t.txn, t.collection.dbi, unsafeAddr key.val, addr vals[0],
                        convertFlags(flags) or MDBX_MULTIPLE)
     # Note: `mdbx_put_PTR` is actually the same C function as `mdbx_put`, just declared in

@@ -181,7 +181,7 @@ proc value*(curs: var Cursor): lent Data =
 proc valueLen*(curs: var Cursor): int =
     ## Returns the length of the current value, in bytes.
     assert curs.positioned
-    return int(curs.mdbVal.val.len)
+    return int(curs.mdbVal.val.iov_len)
 
 proc hasValue*(curs: var Cursor): bool =
     ## Returns true if the Cursor is at a valid key & value (i.e. is not past the end.)
