@@ -16,6 +16,12 @@ I don't call NimDBX a libmdbx "wrapper" because it doesn't present exactly the s
 
 But yes, this is really just a thin Nim shell around the libmdbx C library.
 
+### License
+
+NimDBX is released under the Apache 2 license.
+
+However, libmdbx itself is under the OpenLDAP Public License -- see `vendor/libmdbx/LICENSE`.
+
 ## The Data Model
 
 - A **database** is contained in a regular file (normally wrapped in a directory.)
@@ -56,13 +62,13 @@ Because of this, it's important not to leave snapshots around too long. As long 
 
 ## Building
 
-**¡IMPORTANT!** The build process isn't fully turn-key yet. Nimble will not build libmdbx for you, so instead you need to `cd vendor/libmdbx` (it's a Git submodule) and run `make`. You only need to do this once.
+This package now uses [Nimterop](https://github.com/nimterop/nimterop) to build libmdbx and statically link it, automatically.
 
-After that, `nimble test` should be able to compile and run the unit tests.
+`nimble test` will compile and run the unit tests.
 
 ## Status
 
 This is pretty new code (as of November 2020). It has tests, but hasn't been exercised much yet.
 And libMDBX is still under development, though I've found it quite solid.
 
-I plan to expose some more libmdbx features, and add some more idiomatic Nim APIs like iterators.
+I plan to expose some more libmdbx features, and add some more idiomatic Nim APIs.
