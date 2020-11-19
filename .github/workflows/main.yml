@@ -5,6 +5,7 @@ on: [push]
 jobs:
   tests:
     strategy:
+      fail-fast: false
       matrix:
         os: [macOS-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -18,4 +19,5 @@ jobs:
         uses: jiro4989/setup-nim-action@v1
         with:
           nim-version: '1.4.0'
-      - run: nimble test -y
+      - name: build and test
+        run: nimble test -y
