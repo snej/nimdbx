@@ -50,18 +50,18 @@ converter asString*(d: Data): string =
 
 proc `$`*(d: Data): string = d.asString()
 
-converter asCharSeq*(d: Data): seq[char] =
-    result = newSeq[char](d.val.iov_len)
+proc asSeq[T](d: Data): seq[T] =
+    result = newSeq[T](int(d.val.iov_len) div sizeof(T))
     if d.val.iov_len > 0:
         copyMem(addr result[0], d.val.iov_base, d.val.iov_len)
-converter asByteSeq*(d: Data): seq[byte] =
-    result = newSeq[byte](d.val.iov_len)
-    if d.val.iov_len > 0:
-        copyMem(addr result[0], d.val.iov_base, d.val.iov_len)
+
+converter asCharSeq*(d: Data): seq[char] = asSeq[char](d)
+converter asByteSeq*(d: Data): seq[byte] = asSeq[byte](d)
 
 converter asInt32*(d: Data): int32 =
     if d.val.iov_len != 4: throw(MDBX_BAD_VALSIZE)
     return cast[ptr int32](d.val.iov_base)[]
+
 converter asInt64*(d: Data): int64 =
     if d.val.iov_len == 4:
         return cast[ptr int32](d.val.iov_base)[]

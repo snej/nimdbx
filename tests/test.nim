@@ -17,6 +17,24 @@ suite "Basic":
         flags = {DuplicateKeys, IntegerDup, ReverseDup}
         check cast[uint](flags) == 0x64
 
+    test "Data":
+        proc dumpData(d: Data): seq[byte] =
+            result = newSeq[byte](d.val.iov_len)
+            if d.val.iov_len > 0:
+                copyMem(addr result[0], d.val.iov_base, d.val.iov_len)
+
+        check dumpData("") == newSeq[byte](0)
+        check dumpData("hello") == @[104'u8, 101, 108, 108, 111]
+        check dumpData(@['h', 'e', 'l', 'l', 'o']) == @[104'u8, 101, 108, 108, 111]
+        check dumpData(@[23'u8, 88, 99]) == @[23'u8, 88, 99]
+
+        check dumpData(0'i32) == @[0'u8, 0, 0, 0]
+        check dumpData(0x12345678'i32) == @[0x78'u8, 0x56, 0x34, 0x12] # FIX: Little-endian
+        check dumpData(0x123456789abcdef0'i64) == @[0xf0'u8, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12]
+
+        check asInt32(asData(0x12345678'i32)) == 0x12345678'i32
+        check asInt64(asData(0x12345678'i32)) == 0x12345678'i64
+        check asInt64(asData(0x123456789abcdef0'i64)) == 0x123456789abcdef0'i64
 
 suite "Database":
     var db: Database
@@ -98,11 +116,14 @@ suite "Database":
         check gotVal == true
 
 
+    proc expectedKey(i: int): string = &"key-{i:02}"
+    proc expectedValue(i: int): string = &"the value is {i}."
+
     proc createEntries() =
         echo "-- Create 100 entries --"
         coll.inTransaction do (ct: CollectionTransaction):
             for i in 0..99:
-                ct.put(&"key-{i:02}", &"the value is {i}.")
+                ct.put(expectedKey(i), expectedValue(i))
             ct.commit()
 
 
@@ -120,8 +141,9 @@ suite "Database":
         while curs.next():
             check i < 100
             #echo curs.key, " = ", curs.value
-            check $curs.key == &"key-{i:02}"
-            check $curs.value == &"the value is {i}."
+            check $curs.key == expectedKey(i)
+            if $curs.key != expectedKey(i): echo "oops, stopping"; break   # Likely to produce 99 more failures...
+            check $curs.value == expectedValue(i)
             i += 1
         check i == 100
         check cs.entryCount == 100
@@ -170,8 +192,9 @@ suite "Database":
         while curs.prev():
             check i >= 0
             #echo curs.key, " = ", curs.value
-            check $curs.key == &"key-{i:02}"
-            check $curs.value == &"the value is {i}."
+            check $curs.key == expectedKey(i)
+            if $curs.key != expectedKey(i): echo "oops, stopping"; break   # Likely to produce 99 more failures...
+            check $curs.value == expectedValue(i)
             i -= 1
         check i == -1
         curs.close()
@@ -180,8 +203,9 @@ suite "Database":
         i = 0
         for key, value in cs:
             check i < 100
-            check $key == &"key-{i:02}"
-            check $value == &"the value is {i}."
+            check $key == expectedKey(i)
+            if $key != expectedKey(i): echo "oops, stopping"; break   # Likely to produce 99 more failures...
+            check $value == expectedValue(i)
             i += 1
         check i == 100
 
@@ -189,8 +213,9 @@ suite "Database":
         i = 99
         for key, value in cs.reversed:
             check i < 100
-            check $key == &"key-{i:02}"
-            check $value == &"the value is {i}."
+            check $key == expectedKey(i)
+            if $key != expectedKey(i): echo "oops, stopping"; break   # Likely to produce 99 more failures...
+            check $value == expectedValue(i)
             i -= 1
         check i == -1
 
@@ -202,15 +227,19 @@ suite "Database":
         echo "-- Add keys --"
         coll.inTransaction do (ct: CollectionTransaction):
             for i in 0..99:
-                ct.put(int32(i), &"the value is {i}.")
+                ct.put(int32(i), expectedValue(i))
+            check ct.entryCount() == 100
             ct.commit()
 
         echo "-- Get by key --"
         var cs = coll.beginSnapshot()
+        check cs.entryCount() == 100
         for i in 0..99:
-            let val = cs.get(int32(i)).asString
+            let val = cs.get(int32(i))
             #echo i, " = ", val
-            check val == &"the value is {i}."
+            check val
+            check $val == expectedValue(i)
+            if $val != expectedValue(i): echo "oops, stopping"; break
 
         echo "-- Forwards iteration --"
         var curs = makeCursor(cs)
@@ -218,8 +247,10 @@ suite "Database":
         while curs.next():
             check i < 100
             #echo curs.intKey, " = ", curs.value
+            check curs.key.asInt32 == i
             check curs.key.asInt64 == i
-            check $curs.value == &"the value is {i}."
+            check $curs.value == expectedValue(i)
+            if curs.key.asInt32 != i: echo "oops, stopping"; break
             i += 1
         check i == 100
 
@@ -241,8 +272,9 @@ suite "Database":
             var i = first
             while curs.next():
                 #echo curs.key, " = ", curs.value
-                check $curs.key == &"key-{i:02}"
-                check $curs.value == &"the value is {i}."
+                check $curs.key == expectedKey(i)
+                check $curs.value == expectedValue(i)
+                if $curs.key != expectedKey(i): echo "oops, stopping"; break   # Likely to produce 99 more failures...
                 check i <= last
                 i += 1
             check i == last + 1
@@ -257,8 +289,9 @@ suite "Database":
             i = last
             while curs.prev():
                 #echo curs.key, " = ", curs.value
-                check $curs.key == &"key-{i:02}"
-                check $curs.value == &"the value is {i}."
+                check $curs.key == expectedKey(i)
+                check $curs.value == expectedValue(i)
+                if $curs.key != expectedKey(i): echo "oops, stopping"; break   # Likely to produce 99 more failures...
                 check i >= first
                 i -= 1
             check i == first - 1
