@@ -1,11 +1,10 @@
 # Package
 
-version       = "0.2.0"
+version       = "0.3.0"
 author        = "Jens Alfke"
 description   = "Unofficial Nim bindings for libmdbx key-value database"
 license       = "Apache-2.0, OpenLDAP"
 srcDir        = "src"
-
 
 # Dependencies
 
