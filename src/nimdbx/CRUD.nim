@@ -74,7 +74,7 @@ proc asSeq[T](base: pointer, len: int): seq[T] =
     if len > 0:
         copyMem(addr result[0], base, len)
 
-proc asSeq[T](val: MDBX_val): seq[T] = asSeq[T](val.iov_base, int(val.iov_len))
+proc asSeq*[T](val: MDBX_val): seq[T] = asSeq[T](val.iov_base, int(val.iov_len))
 
 converter asByteSeq*(d: Data): seq[byte] =
     case d.kind:

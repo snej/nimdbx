@@ -18,8 +18,13 @@ suite "Basic":
         check cast[uint](flags) == 0x64
 
     test "Data":
-        proc loopback(d: Data): DataOut = DataOut(val: d.raw)
-        proc dumpData(d: Data): seq[byte] = d.loopback.asByteSeq
+        var savedData: seq[byte]
+
+        proc loopback(d: Data): DataOut =
+            savedData = asSeq[byte](d.raw)
+            return savedData
+
+        proc dumpData(d: Data): seq[byte] = loopback(d)
 
         check dumpData("") == newSeq[byte](0)
         check dumpData("hello") == @[104'u8, 101, 108, 108, 111]
