@@ -8,8 +8,8 @@ type
         ## A read-only iterator over the keys/values of a Collection.
         curs {.requiresInit.}: ptr MDBX_cursor
         owner: Snapshot
-        mdbKey, mdbVal: Data
-        minKey, maxKey: seq[char]
+        mdbKey, mdbVal: DataOut
+        minKey, maxKey: seq[byte]
         minKeyCmp, maxKeyCmp: int
         positioned: bool
 
@@ -65,13 +65,13 @@ proc close*(curs: var Cursor) =
         curs.positioned = false
 
 
-proc minKey*(curs: Cursor): Data =  curs.minKey
+proc minKey*(curs: Cursor): DataOut =  curs.minKey
     ## The minimum key to iterate over, if any.
 
 proc `minKey=`*(curs: var Cursor, key: Data) =  curs.minKey = key
     ## Sets minimum key to iterate over, if any.
 
-proc maxKey*(curs: Cursor): Data =  curs.maxKey
+proc maxKey*(curs: Cursor): DataOut =  curs.maxKey
     ## The maximum key to iterate over, if any.
 
 proc `maxKey=`*(curs: var Cursor, key: Data) =  curs.maxKey = key
@@ -85,8 +85,9 @@ proc compareKey*(curs: Cursor, withKey: Data): int =
     ## sort order.
     ## Returns 1 if the cursor's key is greater, 0 if equal, -1 if ``withKey`` is greater.
     assert curs.positioned
+    var rawKey = withKey.raw
     return mdbx_cmp(curs.owner.txn, mdbx_cursor_dbi(curs.curs),
-                    unsafeAddr curs.mdbKey.val, unsafeAddr withKey.val)
+                    unsafeAddr curs.mdbKey.val, addr rawKey)
 
 ######## CURSOR POSITIONING:
 
@@ -104,16 +105,16 @@ proc op(curs: var Cursor, op: MDBX_cursor_op): bool =
     curs.positioned = true
 
 
-proc seek*(curs: var Cursor, key: openarray[char]): bool {.discardable.} =
+proc seek*(curs: var Cursor, key: Data): bool {.discardable.} =
     ## Moves to the first key _greater than or equal to_ the given key;
     ## returns false if there is none.
-    curs.mdbKey = key
+    curs.mdbKey.val = key.raw
     curs.op(MDBX_SET_RANGE)
 
 
-proc seekExact*(curs: var Cursor, key: openarray[char]): bool {.discardable.} =
+proc seekExact*(curs: var Cursor, key: Data): bool {.discardable.} =
     ## Moves to the _exact_ key given; returns false if it isn't found.
-    curs.mdbKey = key
+    curs.mdbKey.val = key.raw
     curs.op(MDBX_SET_KEY)
 
 
@@ -168,12 +169,12 @@ proc prev*(curs: var Cursor): bool {.discardable.} =
 ######## CURSOR ATTRIBUTES
 
 
-proc key*(curs: var Cursor): lent Data =
+proc key*(curs: var Cursor): lent DataOut =
     ## Returns the current key, if any.
     assert curs.positioned
     return curs.mdbKey
 
-proc value*(curs: var Cursor): lent Data =
+proc value*(curs: var Cursor): lent DataOut =
     ## Returns the current value, if any.
     assert curs.positioned
     return curs.mdbVal
@@ -210,39 +211,39 @@ converter toBool*(curs: var Cursor): bool = curs.hasValue
 ######## ITERATORS
 
 
-iterator pairs*(curs: var Cursor): (Data, Data) {.inline.} =
+iterator pairs*(curs: var Cursor): (DataOut, DataOut) {.inline.} =
     ## This iterator lets you write a ``for`` loop over a Cursor:
     ## ``for key, value in cursor: ...``
     defer: curs.close()
     while curs.next():
         # Construct new `Data`s as a workaround since `key` and `val` cannot be copied
-        yield (Data(val: curs.key.val), Data(val: curs.value.val))
+        yield (DataOut(val: curs.key.val), DataOut(val: curs.value.val))
 
 
-iterator reversed*(curs: var Cursor): (Data, Data) {.inline.} =
+iterator reversed*(curs: var Cursor): (DataOut, DataOut) {.inline.} =
     ## This iterator lets you write a reverse-order ``for`` loop over a Cursor:
     ## ``for key, value in cursor.reversed: ...``
     defer: curs.close()
     while curs.prev():
-        # Construct new `Data`s as a workaround since `key` and `val` cannot be copied
-        yield (Data(val: curs.key.val), Data(val: curs.value.val))
+        # Construct new `DataOut`s as a workaround since `key` and `val` cannot be copied
+        yield (DataOut(val: curs.key.val), DataOut(val: curs.value.val))
 
 
-iterator pairs*(snap: CollectionSnapshot): (Data, Data) {.inline.} =
+iterator pairs*(snap: CollectionSnapshot): (DataOut, DataOut) {.inline.} =
     ## This iterator lets you write a ``for`` loop over a CollectionSnapshot:
     ## ``for key, value in coll.with(snap): ...``
     var curs = makeCursor(snap)
     defer: curs.close()
     while curs.next():
-        # Construct new `Data`s as a workaround since `key` and `val` cannot be copied
-        yield (Data(val: curs.key.val), Data(val: curs.value.val))
+        # Construct new `DataOut`s as a workaround since `key` and `val` cannot be copied
+        yield (DataOut(val: curs.key.val), DataOut(val: curs.value.val))
 
 
-iterator reversed*(snap: CollectionSnapshot): (Data, Data) {.inline.} =
+iterator reversed*(snap: CollectionSnapshot): (DataOut, DataOut) {.inline.} =
     ## This iterator lets you write a reverse-order ``for`` loop over a CollectionSnapshot:
     ## ``for key, value in coll.with(snap).reversed: ...``
     var curs = makeCursor(snap)
     defer: curs.close()
     while curs.prev():
-        # Construct new `Data`s as a workaround since `key` and `val` cannot be copied
-        yield (Data(val: curs.key.val), Data(val: curs.value.val))
+        # Construct new `DataOut`s as a workaround since `key` and `val` cannot be copied
+        yield (DataOut(val: curs.key.val), DataOut(val: curs.value.val))

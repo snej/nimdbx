@@ -18,10 +18,8 @@ suite "Basic":
         check cast[uint](flags) == 0x64
 
     test "Data":
-        proc dumpData(d: Data): seq[byte] =
-            result = newSeq[byte](d.val.iov_len)
-            if d.val.iov_len > 0:
-                copyMem(addr result[0], d.val.iov_base, d.val.iov_len)
+        proc loopback(d: Data): DataOut = DataOut(val: d.raw)
+        proc dumpData(d: Data): seq[byte] = d.loopback.asByteSeq
 
         check dumpData("") == newSeq[byte](0)
         check dumpData("hello") == @[104'u8, 101, 108, 108, 111]
@@ -32,9 +30,9 @@ suite "Basic":
         check dumpData(0x12345678'i32) == @[0x78'u8, 0x56, 0x34, 0x12] # FIX: Little-endian
         check dumpData(0x123456789abcdef0'i64) == @[0xf0'u8, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12]
 
-        check asInt32(asData(0x12345678'i32)) == 0x12345678'i32
-        check asInt64(asData(0x12345678'i32)) == 0x12345678'i64
-        check asInt64(asData(0x123456789abcdef0'i64)) == 0x123456789abcdef0'i64
+        check asInt32(loopback(0x12345678'i32)) == 0x12345678'i32
+        check asInt64(loopback(0x12345678'i32)) == 0x12345678'i64
+        check asInt64(loopback(0x123456789abcdef0'i64)) == 0x123456789abcdef0'i64
 
 suite "Database":
     var db: Database
@@ -85,15 +83,13 @@ suite "Database":
         check cs.get("splat") == "I am splat's value"
         check cs.get("bogus") == ""
 
-        var key: Data = "moo"
-        var nearest = cs.getGreaterOrEqual(key)
-        check key == "splat"
-        check nearest == "I am splat's value"
+        var (nearestkey, nearestval) = cs.getGreaterOrEqual("moo")
+        check $nearestkey == "splat"
+        check $nearestval == "I am splat's value"
 
-        key = "zz top"
-        nearest = cs.getGreaterOrEqual(key)
-        check not key
-        check not nearest
+        var (nearestkey2, nearestval2) = cs.getGreaterOrEqual("zz top")
+        check not nearestkey2
+        check not nearestval2
 
         cs.finish()
 
