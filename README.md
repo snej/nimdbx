@@ -8,8 +8,6 @@ Even though it's low-level, it provides full ACID semantics: Atomic commits, Con
 
 For more details I highly recommend reading the libmdbx [README](https://github.com/erthink/libmdbx/blob/master/README.md) and at least skimming the [API documentation](https://erthink.github.io/libmdbx/).
 
-API documentation for NimDBX is [here](/snej/nimdbx/blob/main/htmldocs/nimdbx.html).
-
 ## Credits and Origins
 
 NimDBX is by Jens Alfke. libmdbx is by Леонид Юрьев (Leonid Yuriev) and is a heavily modified extension of Howard Chu's [LMDB](http://lmdb.tech). Many of the concepts and even C APIs date back through [Berkeley DB](https://en.wikipedia.org/wiki/Berkeley_DB) to the original [1979 dbm library](https://en.wikipedia.org/wiki/DBM_%28computing%29).
