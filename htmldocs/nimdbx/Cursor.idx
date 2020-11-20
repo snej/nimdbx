@@ -1,0 +1,31 @@
+Cursor	nimdbx/Cursor.html#Cursor	Cursor: Cursor	
+makeCursor	nimdbx/Cursor.html#makeCursor,Collection,Snapshot	Cursor: makeCursor(coll: Collection; snap: Snapshot): Cursor	
+makeCursor	nimdbx/Cursor.html#makeCursor,CollectionSnapshot	Cursor: makeCursor(snap: CollectionSnapshot): Cursor	
+NoKey	nimdbx/Cursor.html#NoKey	Cursor: NoKey	
+`[]`	nimdbx/Cursor.html#[],CollectionSnapshot,HSlice[T,U]	Cursor: `[]`[T, U](snap: CollectionSnapshot; range: HSlice[T, U]): Cursor	
+close	nimdbx/Cursor.html#close,Cursor	Cursor: close(curs: var Cursor)	
+minKey	nimdbx/Cursor.html#minKey,Cursor	Cursor: minKey(curs: Cursor): DataOut	
+minKey=	nimdbx/Cursor.html#minKey=,Cursor,Data	Cursor: minKey=(curs: var Cursor; key: Data)	
+maxKey	nimdbx/Cursor.html#maxKey,Cursor	Cursor: maxKey(curs: Cursor): DataOut	
+maxKey=	nimdbx/Cursor.html#maxKey=,Cursor,Data	Cursor: maxKey=(curs: var Cursor; key: Data)	
+skipMinKey=	nimdbx/Cursor.html#skipMinKey=,Cursor,bool	Cursor: skipMinKey=(curs: var Cursor; skip: bool)	
+skipMaxKey=	nimdbx/Cursor.html#skipMaxKey=,Cursor,bool	Cursor: skipMaxKey=(curs: var Cursor; skip: bool)	
+compareKey	nimdbx/Cursor.html#compareKey,Cursor,Data	Cursor: compareKey(curs: Cursor; withKey: Data): int	
+seek	nimdbx/Cursor.html#seek,Cursor,Data	Cursor: seek(curs: var Cursor; key: Data): bool	
+seekExact	nimdbx/Cursor.html#seekExact,Cursor,Data	Cursor: seekExact(curs: var Cursor; key: Data): bool	
+first	nimdbx/Cursor.html#first,Cursor	Cursor: first(curs: var Cursor): bool	
+last	nimdbx/Cursor.html#last,Cursor	Cursor: last(curs: var Cursor): bool	
+next	nimdbx/Cursor.html#next,Cursor	Cursor: next(curs: var Cursor): bool	
+prev	nimdbx/Cursor.html#prev,Cursor	Cursor: prev(curs: var Cursor): bool	
+key	nimdbx/Cursor.html#key,Cursor	Cursor: key(curs: var Cursor): lent DataOut	
+value	nimdbx/Cursor.html#value,Cursor	Cursor: value(curs: var Cursor): lent DataOut	
+valueLen	nimdbx/Cursor.html#valueLen,Cursor	Cursor: valueLen(curs: var Cursor): int	
+hasValue	nimdbx/Cursor.html#hasValue,Cursor	Cursor: hasValue(curs: var Cursor): bool	
+onFirst	nimdbx/Cursor.html#onFirst,Cursor	Cursor: onFirst(curs: Cursor): bool	
+onLast	nimdbx/Cursor.html#onLast,Cursor	Cursor: onLast(curs: Cursor): bool	
+valueCount	nimdbx/Cursor.html#valueCount,Cursor	Cursor: valueCount(curs: Cursor): int	
+toBool	nimdbx/Cursor.html#toBool.c,Cursor	Cursor: toBool(curs: var Cursor): bool	
+pairs	nimdbx/Cursor.html#pairs.i,Cursor	Cursor: pairs(curs: var Cursor): (DataOut, DataOut)	
+reversed	nimdbx/Cursor.html#reversed.i,Cursor	Cursor: reversed(curs: var Cursor): (DataOut, DataOut)	
+pairs	nimdbx/Cursor.html#pairs.i,CollectionSnapshot	Cursor: pairs(snap: CollectionSnapshot): (DataOut, DataOut)	
+reversed	nimdbx/Cursor.html#reversed.i,CollectionSnapshot	Cursor: reversed(snap: CollectionSnapshot): (DataOut, DataOut)	

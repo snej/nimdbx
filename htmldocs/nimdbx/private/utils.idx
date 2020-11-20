@@ -1,0 +1,7 @@
+ERRORS	nimdbx/private/utils.html#errors	      ERRORS	
+MDBXError	nimdbx/private/utils.html#MDBXError	utils: MDBXError	
+throw	nimdbx/private/utils.html#throw,MDBX_error_t	utils: throw(code: MDBX_error_t)	
+check	nimdbx/private/utils.html#check,MDBX_error_t	utils: check(code: MDBX_error_t)	
+checkOptional	nimdbx/private/utils.html#checkOptional,MDBX_error_t	utils: checkOptional(code: MDBX_error_t): bool	
+check	nimdbx/private/utils.html#check,int	utils: check(code: int)	
+checkOptional	nimdbx/private/utils.html#checkOptional,int	utils: checkOptional(code: int): bool	

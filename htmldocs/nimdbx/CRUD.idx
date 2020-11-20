@@ -1,0 +1,52 @@
+Data	nimdbx/CRUD.html#Data	CRUD: Data	
+clear	nimdbx/CRUD.html#clear,Data	CRUD: clear(d: var Data)	
+exists	nimdbx/CRUD.html#exists.c,Data	CRUD: exists(d: Data): bool	
+`not`	nimdbx/CRUD.html#not,Data	CRUD: `not`(d: Data): bool	
+raw	nimdbx/CRUD.html#raw.t,Data	CRUD: raw(d: Data): MDBX_val	
+asData	nimdbx/CRUD.html#asData.c,string	CRUD: asData(a: string): Data	
+asData	nimdbx/CRUD.html#asData.c,seq[char]	CRUD: asData(a: seq[char]): Data	
+asData	nimdbx/CRUD.html#asData.c,openArray[char]	CRUD: asData(a: openArray[char]): Data	
+asData	nimdbx/CRUD.html#asData.c,seq[byte]	CRUD: asData(a: seq[byte]): Data	
+asData	nimdbx/CRUD.html#asData.c,openArray[byte]	CRUD: asData(a: openArray[byte]): Data	
+asData	nimdbx/CRUD.html#asData.c,int32	CRUD: asData(i: int32): Data	
+asData	nimdbx/CRUD.html#asData.c,int64	CRUD: asData(i: int64): Data	
+NoData_t	nimdbx/CRUD.html#NoData_t	CRUD: NoData_t	
+NoData	nimdbx/CRUD.html#NoData	CRUD: NoData	
+asData	nimdbx/CRUD.html#asData.c,NoData_t	CRUD: asData(n: NoData_t): Data	
+asData	nimdbx/CRUD.html#asData.c,MDBX_val	CRUD: asData(mdbx: MDBX_val): Data	
+asSeq	nimdbx/CRUD.html#asSeq,MDBX_val	CRUD: asSeq[T](val: MDBX_val): seq[T]	
+asByteSeq	nimdbx/CRUD.html#asByteSeq.c,Data	CRUD: asByteSeq(d: Data): seq[byte]	
+DataOut	nimdbx/CRUD.html#DataOut	CRUD: DataOut	
+exists	nimdbx/CRUD.html#exists.c,DataOut	CRUD: exists(d: DataOut): bool	
+`not`	nimdbx/CRUD.html#not,DataOut	CRUD: `not`(d: DataOut): bool	
+clear	nimdbx/CRUD.html#clear,DataOut	CRUD: clear(d: var DataOut)	
+asString	nimdbx/CRUD.html#asString.c,DataOut	CRUD: asString(d: DataOut): string	
+`$`	nimdbx/CRUD.html#$,DataOut	CRUD: `$`(d: DataOut): string	
+asCharSeq	nimdbx/CRUD.html#asCharSeq.c,DataOut	CRUD: asCharSeq(d: DataOut): seq[char]	
+asByteSeq	nimdbx/CRUD.html#asByteSeq.c,DataOut	CRUD: asByteSeq(d: DataOut): seq[byte]	
+asInt32	nimdbx/CRUD.html#asInt32.c,DataOut	CRUD: asInt32(d: DataOut): int32	
+asInt64	nimdbx/CRUD.html#asInt64.c,DataOut	CRUD: asInt64(d: DataOut): int64	
+asDataOut	nimdbx/CRUD.html#asDataOut.c,seq[byte]	CRUD: asDataOut(a: seq[byte]): DataOut	
+get	nimdbx/CRUD.html#get,CollectionSnapshot,Data	CRUD: get(snap: CollectionSnapshot; key: Data): DataOut	
+`[]`	nimdbx/CRUD.html#[],CollectionSnapshot,Data	CRUD: `[]`(snap: CollectionSnapshot; key: Data): DataOut	
+getGreaterOrEqual	nimdbx/CRUD.html#getGreaterOrEqual,CollectionSnapshot,Data	CRUD: getGreaterOrEqual(snap: CollectionSnapshot; key: Data): (DataOut, DataOut)	
+get	nimdbx/CRUD.html#get,CollectionSnapshot,Data,proc(openArray[char])	CRUD: get(snap: CollectionSnapshot; key: Data; fn: proc (val: openArray[char])): bool	
+Insert	nimdbx/CRUD.html#Insert	PutFlag.Insert	
+Update	nimdbx/CRUD.html#Update	PutFlag.Update	
+Append	nimdbx/CRUD.html#Append	PutFlag.Append	
+AllDups	nimdbx/CRUD.html#AllDups	PutFlag.AllDups	
+NoDupData	nimdbx/CRUD.html#NoDupData	PutFlag.NoDupData	
+AppendDup	nimdbx/CRUD.html#AppendDup	PutFlag.AppendDup	
+PutFlag	nimdbx/CRUD.html#PutFlag	CRUD: PutFlag	
+PutFlags	nimdbx/CRUD.html#PutFlags	CRUD: PutFlags	
+put	nimdbx/CRUD.html#put,CollectionTransaction,Data,Data	CRUD: put(t: CollectionTransaction; key: Data; value: Data)	
+`[]=`	nimdbx/CRUD.html#[]=,CollectionTransaction,Data,Data	CRUD: `[]=`(t: CollectionTransaction; key: Data; value: Data)	
+insert	nimdbx/CRUD.html#insert,CollectionTransaction,Data,Data	CRUD: insert(t: CollectionTransaction; key: Data; val: Data): bool	
+update	nimdbx/CRUD.html#update,CollectionTransaction,Data,Data	CRUD: update(t: CollectionTransaction; key: Data; val: Data): bool	
+append	nimdbx/CRUD.html#append,CollectionTransaction,Data,Data	CRUD: append(t: CollectionTransaction; key: Data; val: Data)	
+put	nimdbx/CRUD.html#put,CollectionTransaction,Data,Data,PutFlags	CRUD: put(t: CollectionTransaction; key: Data; value: Data; flags: PutFlags): bool	
+put	nimdbx/CRUD.html#put,CollectionTransaction,Data,int,PutFlags,proc(openArray[char])	CRUD: put(t: CollectionTransaction; key: Data; valueLen: int; flags: PutFlags;\n    fn: proc (val: openArray[char])): bool	
+putDuplicates	nimdbx/CRUD.html#putDuplicates,CollectionTransaction,Data,openArray[byte],int,PutFlags	CRUD: putDuplicates(t: CollectionTransaction; key: Data; values: openArray[byte];\n              valueCount: int; flags: PutFlags)	
+del	nimdbx/CRUD.html#del,CollectionTransaction,Data	CRUD: del(t: CollectionTransaction; key: Data): bool	
+delAll	nimdbx/CRUD.html#delAll,CollectionTransaction	CRUD: delAll(t: CollectionTransaction)	
+deleteCollection	nimdbx/CRUD.html#deleteCollection,CollectionTransaction	CRUD: deleteCollection(t: CollectionTransaction)	

@@ -12,16 +12,20 @@ type
         initialized*            : bool
 
     Collection* = ref CollectionObj
+        ## A namespace in a Database: a set of key/value pairs.
+        ## A Database contains a set of named Collections.
+        ##
+        ## Accessing the contents of a Collection requires a Snapshot or Transaction.
 
     CollectionFlag* = enum
         ## Flags that describe properties of a Collection when opening or creating it.
-        Create,             # Create Collection if it doesn't exist
-        ReverseKeys,        # Compare key strings back-to-front
-        DuplicateKeys,      # Allow duplicate keys
-        IntegerKeys,        # Keys are interpreted as native ints; must be 4 or 8 bytes long
-        DupFixed,           # With DuplicateKeys, all values of a key must have the same size
-        IntegerDup,         # With DuplicateKeys, values are native ints, 4 or 8 bytes long
-        ReverseDup          # With DuplicateKeys, values are compared back-to-front
+        Create,         ## Create Collection if it doesn't exist
+        ReverseKeys,    ## Compare key strings back-to-front
+        DuplicateKeys,  ## Allow duplicate keys
+        IntegerKeys,    ## Keys are interpreted as native ints; must be 4 or 8 bytes long
+        DupFixed,       ## With DuplicateKeys, all values of a key must have the same size
+        IntegerDup,     ## With DuplicateKeys, values are native ints, 4 or 8 bytes long
+        ReverseDup      ## With DuplicateKeys, values are compared back-to-front
     CollectionFlags* = set[CollectionFlag]
         ## Flags that describe properties of a Collection when opening or creating it.
 

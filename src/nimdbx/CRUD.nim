@@ -3,7 +3,7 @@
 import Collection, Transaction, private/libmdbx, private/utils
 
 
-######## DATA IN:
+#%%%%%%% DATA IN:
 
 
 type DataKind = enum
@@ -83,10 +83,16 @@ converter asByteSeq*(d: Data): seq[byte] =
     of int64Data: return asSeq[byte](unsafeAddr d.m_i64, sizeof(d.m_i64))
 
 
-######## DATA OUT:
+#%%%%%%% DATA OUT:
 
 
 type DataOut* = object
+    ## A wrapper around a *returned* libmdbx key or value, which is just a pointer and length.
+    ## DataOut is automatically convertible to and from string and integer types, so you normally
+    ## won't use it directly.
+    ##
+    ## IMPORTANT: A DataOut value is valid only until the end of the Snapshot or Transaction
+    ## within which is was created. After that, the data it points to may be overwritten.
     val*: MDBX_val
 
 
@@ -128,7 +134,7 @@ converter asDataOut*(a: seq[byte]): DataOut =
         result.val = MDBX_val(iov_base: unsafeAddr a[0], iov_len: csize_t(a.len))
 
 
-######## COLLECTION VALUE GETTERS
+#%%%%%%% COLLECTION VALUE GETTERS
 
 
 proc get*(snap: CollectionSnapshot, key: Data): DataOut =
@@ -145,7 +151,7 @@ proc `[]`*(snap: CollectionSnapshot, key: Data): DataOut = snap.get(key)
 
 
 proc getGreaterOrEqual*(snap: CollectionSnapshot, key: Data): (DataOut, DataOut) =
-    ## Finds the first key _greater than or equal to_ ``key``.
+    ## Finds the first key *greater than or equal to* ``key``.
     ## If found, returns its value and updates ``key`` to the actual key.
     ## If not found, returns nil Data and sets ``key`` to nil.
     var rawKey = key.raw
@@ -159,7 +165,7 @@ proc get*(snap: CollectionSnapshot,
           key: Data,
           fn: proc(val:openarray[char])): bool {.discardable.} =
     ## Looks up the value of a key in a Collection; if found, it passes it to the callback
-    ## function as an ``openarray``, _without copying_, then returns true.
+    ## function as an ``openarray``, *without copying*, then returns true.
     ## If not found, the callback is not called, and the result is false.
     var rawKey = key.raw
     var mdbVal: MDBX_val
@@ -170,17 +176,17 @@ proc get*(snap: CollectionSnapshot,
         fn(valPtr.toOpenArray(0, int(mdbVal.iov_len) - 1))
 
 
-######## COLLECTION "PUT" OPERATIONS
+#%%%%%%% COLLECTION "PUT" OPERATIONS
 
 
 type
     PutFlag* = enum
-        Insert,         # Don't replace existing entry with same key
-        Update,         # Don't add a new entry, only replace existing one
-        Append,         # Optimized write where key must be the last in the collection
-        AllDups,        # Remove any duplicate keys (can combine with ``Update``)
-        NoDupData,      # Don't create a duplicate key/value pair
-        AppendDup       # Same as Append, but for ``DuplicateKeys`` collections
+        Insert,         ## Don't replace existing entry with same key
+        Update,         ## Don't add a new entry, only replace existing one
+        Append,         ## Optimized write where key must be the last in the collection
+        AllDups,        ## Remove any duplicate keys (can combine with ``Update``)
+        NoDupData,      ## Don't create a duplicate key/value pair
+        AppendDup       ## Same as Append, but for ``DuplicateKeys`` collections
     PutFlags* = set[PutFlag]
         ## Options for ``put`` operations.
 
@@ -289,7 +295,7 @@ proc putDuplicates*(t: CollectionTransaction, key: Data,
 # TODO: Add mdbx_replace
 
 
-######## COLLECTION "DELETE" OPERATIONS
+#%%%%%%% COLLECTION "DELETE" OPERATIONS
 
 
 proc del*(t: CollectionTransaction, key: Data): bool {.discardable.} =
@@ -300,7 +306,7 @@ proc del*(t: CollectionTransaction, key: Data): bool {.discardable.} =
 
 
 proc delAll*(t: CollectionTransaction) =
-    ## Removes **all** keys and values from a Collection, but not the Collection itself.
+    ## Removes **all** keys and values from a Collection, but does not delete the Collection itself.
     check mdbx_drop(t.txn, t.collection.dbi, false)
 
 proc deleteCollection*(t: CollectionTransaction) =

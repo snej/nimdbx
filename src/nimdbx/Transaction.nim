@@ -115,7 +115,7 @@ proc inTransaction*(db: Database, fn: proc(t:Transaction)) =
     fn(t)
 
 
-######## COLLECTION SNAPSHOTS & COLLECTION TRANSACTIONS
+#%%%%%%% COLLECTION SNAPSHOTS & COLLECTION TRANSACTIONS
 
 
 type
@@ -176,7 +176,7 @@ proc inTransaction*(coll: Collection, fn: proc(t:CollectionTransaction)) =
     fn(t)
 
 
-######## COLLECTION ACCESSORS
+#%%%%%%% COLLECTION ACCESSORS
 
 
 proc i_sequence(s: CollectionSnapshot, thenAdd: uint64): uint64 =

@@ -6,6 +6,8 @@ import Collection, CRUD, Transaction, private/libmdbx, private/utils
 type
     Cursor* = object of RootObj
         ## A read-only iterator over the keys/values of a Collection.
+        ##
+        ## NOTE: Writeable Cursors are not implemented yet.
         curs {.requiresInit.}: ptr MDBX_cursor
         owner: Snapshot
         mdbKey, mdbVal: DataOut
@@ -89,7 +91,7 @@ proc compareKey*(curs: Cursor, withKey: Data): int =
     return mdbx_cmp(curs.owner.txn, mdbx_cursor_dbi(curs.curs),
                     unsafeAddr curs.mdbKey.val, addr rawKey)
 
-######## CURSOR POSITIONING:
+#%%%%%%% CURSOR POSITIONING:
 
 
 proc clr(curs: var Cursor): bool    = curs.mdbKey.clear(); curs.mdbVal.clear(); return false
@@ -166,7 +168,7 @@ proc prev*(curs: var Cursor): bool {.discardable.} =
         result = curs.clr()
 
 
-######## CURSOR ATTRIBUTES
+#%%%%%%% CURSOR ATTRIBUTES
 
 
 proc key*(curs: var Cursor): lent DataOut =
@@ -208,7 +210,7 @@ converter toBool*(curs: var Cursor): bool = curs.hasValue
     ## A Cursor can be tested as a bool, to check if it has a value.
 
 
-######## ITERATORS
+#%%%%%%% ITERATORS
 
 
 iterator pairs*(curs: var Cursor): (DataOut, DataOut) {.inline.} =

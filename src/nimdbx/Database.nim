@@ -13,28 +13,31 @@ type
     DatabaseFlag* = enum
         ## Database-wide options. Some of these are dangerous!
         ## The comments below are extremely sketchy. Check libmdbx's docs for ``MDBX_env_flags_t``.
-        NoSubdir,       # Don't put DB file in a directory
-        ReadOnly,       # Open read-only
-        Exclusive,      # Exclusive access to db; no other connections allowed.
-        Accede,         # Adapt if DB already open by other process with different flags
-        NoTLS,          # Allow multiple Snapshots/Transactions on a single OS thread.
-        Coalesce,       # Coalesce freed items; may reduce fragmentation
-        LIFOReclaim,    # Can improve performance if filesystem has a write-back cache
-        PagePerturb,    # Fill released pages with garbage to help catch invalid access
-        NoMetaSync,     # Faster writes, but system crash can corrupt database!
-        SafeNoSync,     # Faster writes, but system crash may wipe out latest transaction!
-        UtterlyNoSync   # Extremely fast writes, but system crash can corrupt database!
+        NoSubdir,       ## Don't put DB file in a directory
+        ReadOnly,       ## Open read-only
+        Exclusive,      ## Exclusive access to db; no other connections allowed.
+        Accede,         ## Adapt if DB already open by other process with different flags
+        NoTLS,          ## Allow multiple Snapshots/Transactions on a single OS thread.
+        Coalesce,       ## Coalesce freed items; may reduce fragmentation
+        LIFOReclaim,    ## Can improve performance if filesystem has a write-back cache
+        PagePerturb,    ## Fill released pages with garbage to help catch invalid access
+        NoMetaSync,     ## Faster writes, but system crash can corrupt database!
+        SafeNoSync,     ## Faster writes, but system crash may wipe out latest transaction!
+        UtterlyNoSync   ## Extremely fast writes, but system crash can corrupt database!
     DatabaseFlags* = set[DatabaseFlag]
 
     CopyDBFlag* = enum
-        CopyCompactCopy,        # "Omit free space from copy and renumber all pages sequentially"
-        CopyForceDynamicSize    # "Force to make resizeable copy, i.e. dynamic size instead of fixed"
+        ## Options for copying a database file.
+        CopyCompactCopy,      ## "Omit free space from copy and renumber all pages sequentially"
+        CopyForceDynamicSize  ## "Force to make resizeable copy, i.e. dynamic size instead of fixed"
     CopyDBFlags* = set[CopyDBFlag]
+        ## Options for copying a database file.
 
     DeleteDBMode* = enum
-        JustDelete = 0,
-        EnsureUnused = 1,
-        WaitForUnused = 2
+        ## Options for deleting a database file.
+        JustDelete = 0,     ## Deletes the file, damn the consequences!
+        EnsureUnused = 1,   ## Raises an error if the file is in use by some other process
+        WaitForUnused = 2   ## Blocks until all other processes have closed the Database
 
 
 proc `=destroy`(db: var DatabaseObj) =
@@ -48,15 +51,15 @@ proc existsDatabase*(path: string): bool =
 
 proc deleteDatabase*(path: string, mode = EnsureUnused) =
     ## Deletes the Database directory at the given path.
-    ## The file must not be open!
+    ## The ``mode`` parameter determines what happens if some other process is using it.
     check mdbx_env_delete(path, MDBX_env_delete_mode_t(mode))
 
-proc eraseDatabase*(path: string) =
+proc eraseDatabase*(path: string, mode = EnsureUnused) =
     ## Erases the contents of a Database at the given path, by emptying the directory.
     ## Afterwards the directory will exist but be empty.
-    ## The file must not be open!
+    ## The ``mode`` parameter determines what happens if some other process is using it.
     if os.existsOrCreateDir(path):
-        deleteDatabase(path)
+        deleteDatabase(path, mode)
         discard os.existsOrCreateDir(path)
 
 
