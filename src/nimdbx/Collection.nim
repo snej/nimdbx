@@ -1,15 +1,18 @@
 # Collection.nim
 
 import Database, private/libmdbx, private/utils
+import tables
 
 let nil_DBI = MDBX_dbi(0xFFFFFFFF)
 
 type
-    CollectionObj = object
-        m_dbi {.requiresInit.}  : MDBX_dbi
-        db* {.requiresInit.}    : Database
-        name* {.requiresInit.}  : string
-        initialized*            : bool
+    CollectionObj = object of RootObj
+        m_dbi {.requiresInit.}     : MDBX_dbi
+        db* {.requiresInit.}       : Database
+        name* {.requiresInit.}     : string
+        keyType* {.requiresInit.}  : KeyType
+        valueType* {.requiresInit.}: ValueType
+        initialized*               : bool
 
     Collection* = ref CollectionObj
         ## A namespace in a Database: a set of key/value pairs.
@@ -17,18 +20,32 @@ type
         ##
         ## Accessing the contents of a Collection requires a Snapshot or Transaction.
 
+    KeyType* = enum
+        StringKeys,         ## Keys are arbitrary strings, compared as by C `strcmp`
+        ReverseStringKeys,  ## Keys are arbitrary strings, compared in reverse
+        IntegerKeys         ## Keys are 32- or 64-bit ints (native byte order)
+
+    ValueType* = enum
+        BlobValues,         ## Values are arbitrary blobs
+        StringValues,       ## Values are strings, compared with `strcmp` (DuplicateKeys only)
+        ReverseStringValues,## Values are strings, compared in reverse (DuplicateKeys only)
+        FixedSizeValues,    ## Values are all the same size (DuplicateKeys only)
+        IntegerValues       ## Values are 32- or 64-bit ints, all same size (DuplicateKeys only)
+
     CollectionFlag* = enum
         ## Flags that describe properties of a Collection when opening or creating it.
-        Create,         ## Create Collection if it doesn't exist
-        ReverseKeys,    ## Compare key strings back-to-front
-        DuplicateKeys,  ## Allow duplicate keys
-        IntegerKeys,    ## Keys are interpreted as native ints; must be 4 or 8 bytes long
-        DupFixed,       ## With DuplicateKeys, all values of a key must have the same size
-        IntegerDup,     ## With DuplicateKeys, values are native ints, 4 or 8 bytes long
-        ReverseDup      ## With DuplicateKeys, values are compared back-to-front
+        CreateCollection,   ## Create Collection if it doesn't exist
+        MustExist,          ## Raise an exception if it doesn't exist (instead of returning nil)
+        DuplicateKeys       ## Allows dup keys (multiple values per key.) Must specify ValueType
     CollectionFlags* = set[CollectionFlag]
         ## Flags that describe properties of a Collection when opening or creating it.
 
+
+const kKeyTypeDBIFlags: array[KeyType, MDBX_db_flags_t] =
+        [MDBX_DB_DEFAULTS, MDBX_REVERSEKEY, MDBX_INTEGERKEY]
+const kValTypeDBIFlags: array[ValueType, MDBX_db_flags_t] =
+        [MDBX_DB_DEFAULTS, MDBX_DUPSORT, MDBX_REVERSEDUP or MDBX_DUPSORT,
+         MDBX_DUPFIXED or MDBX_DUPSORT, MDBX_INTEGERDUP or MDBX_DUPFIXED or MDBX_DUPSORT]
 
 proc openDBI(db: Database, name: string, flags: MDBX_db_flags_t): (MDBX_dbi, bool) =
     #db.mutex.lock() # FIX
@@ -63,22 +80,65 @@ proc openRequiredDBI(db: Database, name: string, flags: MDBX_db_flags_t): (MDBX_
         check MDBX_NOTFOUND
 
 
-proc openCollection*(db: Database, name: string, flags: CollectionFlags): Collection =
-    ## Creates a Collection object giving access to a named collection in a Database.
-    ## If the collection does not exist, and the ``Create`` flag is not set, raises MDBX_NOTFOUND.
+proc getCollection*(db: Database, name: string): Collection =
+    ## Returns an already-opened Collection with the given name, or nil.
+    return Collection(db.m_collections.getOrDefault(name))
 
-    # WARNING: This assumes set[CollectionFlags] matches MDBX_db_flags_t, except for MDBX_CREATE.
-    #          If you reorder CollectionFlags, this will break!
-    var dbiflags = MDBX_db_flags_t(cast[uint](flags - {Create}))
-    if Create in flags:
+
+proc openCollection*(db: Database,
+                     name: string,
+                     flags: CollectionFlags = {},
+                     keyType: KeyType = StringKeys,
+                     valueType: ValueType = BlobValues): Collection =
+    ## Returns a Collection object giving access to a persistent named collection in a Database.
+    ## Multiple calls with the same name will return the same Collection object.
+    ##
+    ## If no collection with that name exists, the behavior depends on the flags:
+    ## - If ``CreateCollection`` is given, the collection will be created.
+    ## - If ``MustExist`` is given, ``MDBX_NOTFOUND`` is raised.
+    ## - Otherwise ``nil`` is returned.
+    ##
+    ## If the collection does already exist, its key and value types must match the ones given,
+    ## or ``MDBX_INCOMPATIBLE`` will be raised.
+    ##
+    ## If the ``DuplicateKeys`` flag is set, the collection will allow multiple values for a key,
+    ## and sorts those values. You must then specify a ValueType other than ``BlobValues``, to
+    ## define their sort order.
+
+    result = db.getCollection(name)
+    if result != nil:
+        if keyType != result.keyType or valueType != result.valueType:
+            throw MDBX_INCOMPATIBLE
+
+        return
+
+    var dbiflags = kKeyTypeDBIFlags[keyType] or kValTypeDBIFlags[valueType]
+    if CreateCollection in flags:
         dbiflags = dbiflags or MDBX_CREATE
-    let (dbi, isNew) = db.openRequiredDBI(name, dbiflags)
-    return Collection(name: name, db: db, m_dbi: dbi, initialized: not isNew)
+    if (dbiflags and MDBX_DUPSORT) != 0:
+        assert(DuplicateKeys in flags, "Using sorted value type requires DuplicateKeys flag")
+    else:
+        assert(not (DuplicateKeys in flags), "Using DuplicateKeys flag requires a sorted value type")
 
-proc createCollection*(db: Database, name: string, flags: CollectionFlags = {}): Collection =
-    ## A convenience that calls ``openCollection`` with the ``Create`` flag set.
-    openCollection(db, name, flags + {Create})
+    let (dbi, isNew) = db.openDBI(name, dbiflags)
+    if dbi == nil_DBI:
+        if MustExist in flags:
+            throw MDBX_NOTFOUND
+        return nil
 
+    result = Collection(name: name, db: db, m_dbi: dbi, keyType: keyType, valueType: valueType,
+                        initialized: not isNew)
+    db.m_collections[name] = result
+
+proc createCollection*(db: Database,
+                       name: string,
+                       keyType: KeyType = StringKeys): Collection =
+    openCollection(db, name, {CreateCollection}, keyType)
+
+
+proc duplicateKeys*(coll: Collection): bool =
+    ## True if the Collection supports duplicate keys.
+    coll.valueType > BlobValues
 
 proc dbi*(coll: Collection): MDBX_dbi =
     coll.db.mustBeOpen()

@@ -7,16 +7,6 @@ let CollectionName = "stuff"
 
 
 suite "Basic":
-    test "CollectionFlags":
-        var flags: CollectionFlags
-        check cast[uint](flags) == 0
-        flags = {ReverseKeys}
-        check cast[uint](flags) == 2
-        flags = {IntegerDup, ReverseDup}
-        check cast[uint](flags) == 0x60
-        flags = {DuplicateKeys, IntegerDup, ReverseDup}
-        check cast[uint](flags) == 0x64
-
     test "Data":
         var savedData: seq[byte]
 
@@ -58,6 +48,9 @@ suite "Database":
         echo "DBI = ", ord(coll.dbi)
         echo "Stats = ", coll.stats
 
+        check db.getCollection(CollectionName) == coll
+        check db.openCollection("missing", {}) == nil
+
     test "Sequences":
         var cs = coll.beginSnapshot()
         check cs.lastSequence == 0
@@ -73,7 +66,7 @@ suite "Database":
         check cs.lastSequence == 4
 
 
-    test "Put and get record":
+    test "Put and get entries":
         var ct = coll.beginTransaction()
         ct.put("foo", "I am the value of foo")
         ct.put("splat", "I am splat's value")
@@ -223,7 +216,7 @@ suite "Database":
 
 
     test "Int Keys":
-        let coll = db.createCollection("ints", {IntegerKeys})
+        let coll = db.createCollection("ints", IntegerKeys)
 
         echo "-- Add keys --"
         coll.inTransaction do (ct: CollectionTransaction):

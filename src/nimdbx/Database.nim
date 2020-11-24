@@ -1,10 +1,12 @@
 import private/libmdbx, private/utils
 from os import nil
+import tables
 
 
 type
     DatabaseObj* = object
         m_env {.requiresInit.}: ptr MDBX_env
+        m_collections*: Table[string, ref RootObj]
         #openDBIMutex: mutex    # TODO: Implement this
 
     Database* = ref DatabaseObj
