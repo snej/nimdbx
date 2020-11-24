@@ -129,6 +129,12 @@ converter asInt64*(d: DataOut): int64 =
     else:
         throw(MDBX_BAD_VALSIZE)
 
+converter asInt*(d: DataOut): int =
+    when sizeof(int) >= 8:
+        int(asInt64(d))
+    else:
+        int(asInt32(d))
+
 converter asDataOut*(a: seq[byte]): DataOut =
     if a.len > 0:
         result.val = MDBX_val(iov_base: unsafeAddr a[0], iov_len: csize_t(a.len))
@@ -181,7 +187,7 @@ proc get*(snap: CollectionSnapshot,
 
 type
     PutFlag* = enum
-        Insert,         ## Don't replace existing entry with same key
+        Insert,         ## Don't replace existing entry[ies] with same key
         Update,         ## Don't add a new entry, only replace existing one
         Append,         ## Optimized write where key must be the last in the collection
         AllDups,        ## Remove any duplicate keys (can combine with ``Update``)
@@ -200,6 +206,10 @@ proc convertFlags(flags: PutFlags): MDBX_put_flags_t =
     for bit in 0..5:
         if (cast[uint](flags) and uint(1 shl bit)) != 0:
             result = result or kPutFlags[bit]
+
+proc convertFlags(flag: PutFlag): MDBX_put_flags_t =
+    return kPutFlags[int(flag)]
+
 
 proc i_put(t: CollectionTransaction, key: Data, value: Data, mdbxFlags: MDBX_put_flags_t): MDBX_error_t =
     var rawKey = key.raw
@@ -246,7 +256,7 @@ proc append*(t: CollectionTransaction, key: Data, val: Data) =
     check t.i_put(key, val, MDBX_APPEND)
 
 
-proc put*(t: CollectionTransaction, key: Data, value: Data, flags: PutFlags): bool =
+proc put*(t: CollectionTransaction, key: Data, value: Data, flags: PutFlags | PutFlag): bool =
     ## Stores a value for a key in a Collection, according to the flags given.
     ## If the write was prevented because of a flag (for example, if ``Insert`` given but a value
     ## already exists) the function returns ``false``.
@@ -254,7 +264,7 @@ proc put*(t: CollectionTransaction, key: Data, value: Data, flags: PutFlags): bo
     return t.i_put(key, value, convertFlags(flags)) == MDBX_SUCCESS
 
 
-proc put*(t: CollectionTransaction, key: Data, valueLen: int, flags: PutFlags,
+proc put*(t: CollectionTransaction, key: Data, valueLen: int, flags: PutFlags | PutFlag,
           fn: proc(val:openarray[char])): bool =
     ## Stores a value for a key in a Collection. The value is filled in by a callback function.
     ## This eliminates a memory-copy inside libmdbx, and might save you some allocation.
@@ -274,7 +284,7 @@ proc put*(t: CollectionTransaction, key: Data, valueLen: int, flags: PutFlags,
 
 proc putDuplicates*(t: CollectionTransaction, key: Data,
                     values: openarray[byte], valueCount: int,
-                    flags: PutFlags) =
+                    flags: PutFlags | PutFlag) =
     ## Stores multiple values for a single key.
     ## The collection must use ``DupFixed``, i.e. have multiple fixed-size values.
     ## ``values`` must contain all the values in contiguous memory.
