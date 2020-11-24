@@ -48,7 +48,7 @@ suite "Database":
         echo "DBI = ", ord(coll.dbi)
         echo "Stats = ", coll.stats
 
-        check db.getCollection(CollectionName) == coll
+        check db.getOpenCollection(CollectionName) == coll
         check db.openCollection("missing", {}) == nil
 
     test "Sequences":
@@ -394,4 +394,6 @@ suite "Database":
                 check curs.value.asInt == 1
             check not curs.nextKey()
 
-        # TODO: Duplicate keys + key ranges
+    # TODO: Test duplicate keys + key ranges
+
+    # TODO: Test read-only Database

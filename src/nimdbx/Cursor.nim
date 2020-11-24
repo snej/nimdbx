@@ -1,6 +1,6 @@
 # Cursor.nim
 
-import Collection, CRUD, Transaction, private/libmdbx, private/utils
+import Collection, Data, Error, Transaction, private/libmdbx
 
 
 type
