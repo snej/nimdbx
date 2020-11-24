@@ -393,3 +393,5 @@ suite "Database":
                 check $curs.key == expectedKey(i)
                 check curs.value.asInt == 1
             check not curs.nextKey()
+
+        # TODO: Duplicate keys + key ranges

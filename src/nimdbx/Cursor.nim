@@ -14,6 +14,7 @@ type
         minKey, maxKey: seq[byte]
         minKeyCmp, maxKeyCmp: int
         positioned: bool
+        duplicateKeys: bool
 
 
 proc `=`(dst: var Cursor, src: Cursor) {.error.}
@@ -35,7 +36,7 @@ proc makeCursor*(coll: Collection, snap: Snapshot): Cursor =
     ## ```
     var curs: ptr MDBX_cursor
     check mdbx_cursor_open(snap.txn, coll.dbi, addr curs)
-    return Cursor(curs: curs, owner: snap)
+    return Cursor(curs: curs, owner: snap, duplicateKeys: coll.duplicateKeys)
 
 proc makeCursor*(snap: CollectionSnapshot): Cursor =
     ## Creates a Cursor on a Collection in a Snapshot.
@@ -121,29 +122,39 @@ proc seekExact*(curs: var Cursor, key: Data): bool {.discardable.} =
 
 
 proc first*(curs: var Cursor): bool {.discardable.} =
-    ## Moves to the first key in range; returns false if there is none.
+    ## Moves to the first value of the first key in range; returns false if there is none.
     if curs.minKey.len == 0:
-        return curs.op(MDBX_FIRST)
-    result = curs.seek(curs.minKey)
-    if result and curs.minKeyCmp != 0 and curs.pastMinKey():
-        # Skip first key
-        result = curs.op(MDBX_NEXT)
-    if result and curs.maxKey.len > 0 and curs.pastMaxKey():
-        # First key is after maxKey, so don't include it
-        result = curs.clr()
+        result = curs.op(MDBX_FIRST)
+    else:
+        result = curs.seek(curs.minKey)
+        if result and curs.minKeyCmp != 0 and curs.pastMinKey():
+            # Skip first key
+            result = curs.op(MDBX_NEXT)
+        if result and curs.maxKey.len > 0 and curs.pastMaxKey():
+            # First key is after maxKey, so don't include it
+            result = curs.clr()
 
 
 proc last*(curs: var Cursor): bool {.discardable.} =
-    ## Moves to the last key in range; returns false if there is none.
+    ## Moves to the last value of the last key in range; returns false if there is none.
     if curs.maxKey.len == 0:
-        return curs.op(MDBX_LAST)
-    result = curs.seek(curs.maxKey) or curs.op(MDBX_LAST)
-    if result and curs.pastMaxKey():
-        # The seek overshot, so I need to go back one (or else I'm skipping the exact max key)
-        result = curs.op(MDBX_PREV)
-    if result and curs.minKey.len > 0 and curs.pastMinKey():
-        # Last key is before minKey, so don't include it
-        result = curs.clr()
+        result = curs.op(MDBX_LAST)
+    else:
+        result = curs.seek(curs.maxKey)
+        if result:
+            if curs.pastMaxKey():
+                # The seek overshot, so I need to go back one value:
+                result = curs.op(MDBX_PREV)
+            else:
+                # Seek was OK, so position at last value of this key:
+                if curs.duplicateKeys:
+                    result = curs.op(MDBX_LAST_DUP)
+        else:
+            # maxKey is past the last key, so go to the end:
+            result = curs.op(MDBX_LAST)
+        if result and curs.minKey.len > 0 and curs.pastMinKey():
+            # Last key is before minKey, so don't include it
+            result = curs.clr()
 
 
 proc next(curs: var Cursor, op: MDBX_cursor_op): bool {.discardable.} =
