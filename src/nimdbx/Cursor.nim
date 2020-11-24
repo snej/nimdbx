@@ -146,26 +146,56 @@ proc last*(curs: var Cursor): bool {.discardable.} =
         result = curs.clr()
 
 
-proc next*(curs: var Cursor): bool {.discardable.} =
-    ## Moves to the next key; returns false if there is none.
-    ## If this is the first movement of this cursor (i.e. the cursor is not yet at a defined
-    ## position), it moves to the first key, if there is one.
+proc next(curs: var Cursor, op: MDBX_cursor_op): bool {.discardable.} =
     if not curs.positioned:
         return curs.first()
-    result = curs.op(MDBX_NEXT)
+    result = curs.op(op)
     if result and curs.maxKey.len > 0 and curs.pastMaxKey():
         result = curs.clr()
 
-
-proc prev*(curs: var Cursor): bool {.discardable.} =
-    ## Moves to the previous key; returns false if there is none.
-    ## If this is the first movement of this cursor (i.e. the cursor is not yet at a defined
-    ## position), it moves to the last key, if there is one.
+proc prev(curs: var Cursor, op: MDBX_cursor_op): bool {.discardable.} =
     if not curs.positioned:
         return curs.last()
     result = curs.op(MDBX_PREV)
     if result and curs.minKey.len > 0 and curs.pastMinKey():
         result = curs.clr()
+
+
+proc next*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the next value; returns false if there is none.
+    ## If this is the first movement of this cursor (i.e. the cursor is not yet at a defined
+    ## position), it moves to the first key, if there is one.
+    curs.next(MDBX_NEXT)
+
+proc prev*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the previous value; returns false if there is none.
+    ## If this is the first movement of this cursor (i.e. the cursor is not yet at a defined
+    ## position), it moves to the last value of the last key, if there is one.
+    curs.prev(MDBX_PREV)
+
+
+proc nextKey*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the next key's first value; returns false if there is none.
+    ## (This is the same as ``next`` in Collections without ``DuplicateKeys``.)
+    curs.next(MDBX_NEXT_NODUP)
+
+proc prevKey*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the previous key's last value; returns false if there is none.
+    ## (This is the same as ``prev`` in Collections without ``DuplicateKeys``.)
+    curs.prev(MDBX_PREV_NODUP)
+
+
+proc nextDup*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the next value of the same key; returns false if there is none.
+    ## (This only makes sense in Collections with ``DuplicateKeys``.)
+    assert curs.positioned
+    result = curs.op(MDBX_NEXT_DUP)
+
+proc prevDup*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the previous value of the same key; returns false if there is none.
+    ## (This only makes sense in Collections with ``DuplicateKeys``.)
+    assert curs.positioned
+    result = curs.op(MDBX_PREV_DUP)
 
 
 #%%%%%%% CURSOR ATTRIBUTES

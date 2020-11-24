@@ -333,3 +333,63 @@ suite "Database":
         curs = cs["a"..NoKey]
         check curs.minKey == "a"
         check not curs.maxKey.exists
+
+
+    test "Duplicate keys":
+        let coll = db.openCollection("dups", {CreateCollection, DuplicateKeys},
+                                     StringKeys, IntegerValues)
+        echo "-- Create entries with dup keys --"
+        coll.inTransaction do (ct: CollectionTransaction):
+            for i in 0..99:
+                let key = expectedKey(i)
+                for val in 1'i32..10'i32:
+                    assert ct.put(key, val, NoDupData)
+            ct.commit()
+
+        echo "-- Read entries back (no dups) --"
+        var cs = coll.beginSnapshot()
+        for i in 0..99:
+            check cs.get(expectedKey(i)) == 1'i32
+
+        echo "-- Iterate all entries --"
+        block:
+            var curs = makeCursor(cs)
+            for i in 0..99:
+                let key = expectedKey(i)
+                for expectedVal in 1..10:
+                    check curs.next()
+                    check $curs.key == key
+                    check curs.value.asInt == expectedVal
+                    check curs.valueCount == 10
+            check not curs.next()
+
+        echo "-- Iterate backwards --"
+        block:
+            var curs = makeCursor(cs)
+            for i in 0..99:
+                let key = expectedKey(99 - i)
+                for val in 1..10:
+                    check curs.prev()
+                    check $curs.key == key
+                    check curs.value.asInt == 11 - val
+                    check curs.valueCount == 10
+            check not curs.prev()
+
+        echo "-- nextDup --"
+        block:
+            var curs = makeCursor(cs)
+            let key = expectedKey(23)
+            curs.seek(key)
+            for val in 1..10:
+                check $curs.key == key
+                check curs.value.asInt == val
+                check curs.nextDup() == (val < 10)
+
+        echo "-- nextKey --"
+        block:
+            var curs = makeCursor(cs)
+            for i in 0..99:
+                check curs.nextKey()
+                check $curs.key == expectedKey(i)
+                check curs.value.asInt == 1
+            check not curs.nextKey()
