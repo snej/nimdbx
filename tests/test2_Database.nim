@@ -1,3 +1,5 @@
+# testDatabase.nim
+
 import strformat, unittest
 import nimdbx
 
@@ -5,29 +7,6 @@ import nimdbx
 let DBPath = "test_db"
 let CollectionName = "stuff"
 
-
-suite "Basic":
-    test "Data":
-        var savedData: seq[byte]
-
-        proc loopback(d: Data): DataOut =
-            savedData = asSeq[byte](d.raw)
-            return savedData
-
-        proc dumpData(d: Data): seq[byte] = loopback(d)
-
-        check dumpData("") == newSeq[byte](0)
-        check dumpData("hello") == @[104'u8, 101, 108, 108, 111]
-        check dumpData(@['h', 'e', 'l', 'l', 'o']) == @[104'u8, 101, 108, 108, 111]
-        check dumpData(@[23'u8, 88, 99]) == @[23'u8, 88, 99]
-
-        check dumpData(0'i32) == @[0'u8, 0, 0, 0]
-        check dumpData(0x12345678'i32) == @[0x78'u8, 0x56, 0x34, 0x12] # FIX: Little-endian
-        check dumpData(0x123456789abcdef0'i64) == @[0xf0'u8, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12]
-
-        check asInt32(loopback(0x12345678'i32)) == 0x12345678'i32
-        check asInt64(loopback(0x12345678'i32)) == 0x12345678'i64
-        check asInt64(loopback(0x123456789abcdef0'i64)) == 0x123456789abcdef0'i64
 
 suite "Database":
     var db: Database
@@ -41,6 +20,7 @@ suite "Database":
     teardown:
         if db != nil:
             db.closeAndDelete()
+
 
     test "create DB":
         check db.path == DBPath
@@ -397,3 +377,42 @@ suite "Database":
     # TODO: Test duplicate keys + key ranges
 
     # TODO: Test read-only Database
+
+
+    test "Collatable Keys":
+        coll.inTransaction do (ct: CollectionTransaction):
+            ct[collatable("hi", 12)] = "hi12"
+            ct[collatable("hi", -12)] = "hi-12"
+            ct[collatable("hi")] = "hi"
+            ct[collatable("bye", 17)] = "bye17"
+            ct[collatable("bye", "-ya")] = "bye-ya"
+            ct[collatable(12345)] = "12345"
+            ct[collatable(false)] = "false"
+            ct.commit
+
+        coll.inSnapshot do (ct: CollectionSnapshot):
+            check ct[collatable("hi", 12)] == "hi12"
+            check ct[collatable("hi", -12)] == "hi-12"
+            check ct[collatable("hi")] == "hi"
+            check ct[collatable("bye", 17)] == "bye17"
+            check ct[collatable("bye", "-ya")] == "bye-ya"
+            check ct[collatable("bye", "-ya")] == "bye-ya"
+            check ct[collatable(12345)] == "12345"
+            check ct[collatable(false)] == "false"
+
+            var curs = makeCursor(ct)
+            check curs.next
+            check curs.key.asCollatable == collatable(false)
+            check curs.next
+            check curs.key.asCollatable == collatable(12345)
+            check curs.next
+            check curs.key.asCollatable == collatable("bye", 17)
+            check curs.next
+            check curs.key.asCollatable == collatable("bye", "-ya")
+            check curs.next
+            check curs.key.asCollatable == collatable("hi")
+            check curs.next
+            check curs.key.asCollatable == collatable("hi", -12)
+            check curs.next
+            check curs.key.asCollatable == collatable("hi", 12)
+            check not curs.next

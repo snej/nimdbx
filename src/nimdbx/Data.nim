@@ -1,6 +1,6 @@
 # Data.nim
 
-import Error, private/libmdbx
+import Collatable, Error, private/libmdbx
 
 
 #%%%%%%% DATA IN:
@@ -63,6 +63,12 @@ converter asData*(i: int32): Data =
     return Data(kind: int32Data, m_i32: i)
 converter asData*(i: int64): Data =
     return Data(kind: int64Data, m_i64: i)
+
+converter asData*(coll: Collatable): Data =
+    var val = MDBX_val(iov_len: csize_t(coll.data.len))
+    if coll.data.len > 0:
+        val.iov_base = unsafeAddr coll.data[0]
+    return Data(kind: stringData, m_val: val)
 
 type NoData_t* = distinct int
 const NoData* = NoData_t(0)
@@ -139,6 +145,9 @@ converter asInt*(d: DataOut): int =
         int(asInt64(d))
     else:
         int(asInt32(d))
+
+converter asCollatable*(d: DataOut): Collatable =
+    asCollatable(d.asByteSeq)
 
 converter asDataOut*(a: seq[byte]): DataOut =
     if a.len > 0:
