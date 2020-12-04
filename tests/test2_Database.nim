@@ -1,3 +1,5 @@
+# testDatabase.nim
+
 import strformat, unittest
 import nimdbx
 
@@ -5,39 +7,6 @@ import nimdbx
 let DBPath = "test_db"
 let CollectionName = "stuff"
 
-
-suite "Basic":
-    test "CollectionFlags":
-        var flags: CollectionFlags
-        check cast[uint](flags) == 0
-        flags = {ReverseKeys}
-        check cast[uint](flags) == 2
-        flags = {IntegerDup, ReverseDup}
-        check cast[uint](flags) == 0x60
-        flags = {DuplicateKeys, IntegerDup, ReverseDup}
-        check cast[uint](flags) == 0x64
-
-    test "Data":
-        var savedData: seq[byte]
-
-        proc loopback(d: Data): DataOut =
-            savedData = asSeq[byte](d.raw)
-            return savedData
-
-        proc dumpData(d: Data): seq[byte] = loopback(d)
-
-        check dumpData("") == newSeq[byte](0)
-        check dumpData("hello") == @[104'u8, 101, 108, 108, 111]
-        check dumpData(@['h', 'e', 'l', 'l', 'o']) == @[104'u8, 101, 108, 108, 111]
-        check dumpData(@[23'u8, 88, 99]) == @[23'u8, 88, 99]
-
-        check dumpData(0'i32) == @[0'u8, 0, 0, 0]
-        check dumpData(0x12345678'i32) == @[0x78'u8, 0x56, 0x34, 0x12] # FIX: Little-endian
-        check dumpData(0x123456789abcdef0'i64) == @[0xf0'u8, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12]
-
-        check asInt32(loopback(0x12345678'i32)) == 0x12345678'i32
-        check asInt64(loopback(0x12345678'i32)) == 0x12345678'i64
-        check asInt64(loopback(0x123456789abcdef0'i64)) == 0x123456789abcdef0'i64
 
 suite "Database":
     var db: Database
@@ -52,11 +21,15 @@ suite "Database":
         if db != nil:
             db.closeAndDelete()
 
+
     test "create DB":
         check db.path == DBPath
         echo db.stats
         echo "DBI = ", ord(coll.dbi)
         echo "Stats = ", coll.stats
+
+        check db.getOpenCollection(CollectionName) == coll
+        check db.openCollection("missing", {}) == nil
 
     test "Sequences":
         var cs = coll.beginSnapshot()
@@ -73,7 +46,7 @@ suite "Database":
         check cs.lastSequence == 4
 
 
-    test "Put and get record":
+    test "Put and get entries":
         var ct = coll.beginTransaction()
         ct.put("foo", "I am the value of foo")
         ct.put("splat", "I am splat's value")
@@ -223,7 +196,7 @@ suite "Database":
 
 
     test "Int Keys":
-        let coll = db.createCollection("ints", {IntegerKeys})
+        let coll = db.createCollection("ints", IntegerKeys)
 
         echo "-- Add keys --"
         coll.inTransaction do (ct: CollectionTransaction):
@@ -340,3 +313,106 @@ suite "Database":
         curs = cs["a"..NoKey]
         check curs.minKey == "a"
         check not curs.maxKey.exists
+
+
+    test "Duplicate keys":
+        let coll = db.openCollection("dups", {CreateCollection, DuplicateKeys},
+                                     StringKeys, IntegerValues)
+        echo "-- Create entries with dup keys --"
+        coll.inTransaction do (ct: CollectionTransaction):
+            for i in 0..99:
+                let key = expectedKey(i)
+                for val in 1'i32..10'i32:
+                    assert ct.put(key, val, NoDupData)
+            ct.commit()
+
+        echo "-- Read entries back (no dups) --"
+        var cs = coll.beginSnapshot()
+        for i in 0..99:
+            check cs.get(expectedKey(i)) == 1'i32
+
+        echo "-- Iterate all entries --"
+        block:
+            var curs = makeCursor(cs)
+            for i in 0..99:
+                let key = expectedKey(i)
+                for expectedVal in 1..10:
+                    check curs.next()
+                    check $curs.key == key
+                    check curs.value.asInt == expectedVal
+                    check curs.valueCount == 10
+            check not curs.next()
+
+        echo "-- Iterate backwards --"
+        block:
+            var curs = makeCursor(cs)
+            for i in 0..99:
+                let key = expectedKey(99 - i)
+                for val in 1..10:
+                    check curs.prev()
+                    check $curs.key == key
+                    check curs.value.asInt == 11 - val
+                    check curs.valueCount == 10
+            check not curs.prev()
+
+        echo "-- nextDup --"
+        block:
+            var curs = makeCursor(cs)
+            let key = expectedKey(23)
+            curs.seek(key)
+            for val in 1..10:
+                check $curs.key == key
+                check curs.value.asInt == val
+                check curs.nextDup() == (val < 10)
+
+        echo "-- nextKey --"
+        block:
+            var curs = makeCursor(cs)
+            for i in 0..99:
+                check curs.nextKey()
+                check $curs.key == expectedKey(i)
+                check curs.value.asInt == 1
+            check not curs.nextKey()
+
+    # TODO: Test duplicate keys + key ranges
+
+    # TODO: Test read-only Database
+
+
+    test "Collatable Keys":
+        coll.inTransaction do (ct: CollectionTransaction):
+            ct[collatable("hi", 12)] = "hi12"
+            ct[collatable("hi", -12)] = "hi-12"
+            ct[collatable("hi")] = "hi"
+            ct[collatable("bye", 17)] = "bye17"
+            ct[collatable("bye", "-ya")] = "bye-ya"
+            ct[collatable(12345)] = "12345"
+            ct[collatable(false)] = "false"
+            ct.commit
+
+        coll.inSnapshot do (ct: CollectionSnapshot):
+            check ct[collatable("hi", 12)] == "hi12"
+            check ct[collatable("hi", -12)] == "hi-12"
+            check ct[collatable("hi")] == "hi"
+            check ct[collatable("bye", 17)] == "bye17"
+            check ct[collatable("bye", "-ya")] == "bye-ya"
+            check ct[collatable("bye", "-ya")] == "bye-ya"
+            check ct[collatable(12345)] == "12345"
+            check ct[collatable(false)] == "false"
+
+            var curs = makeCursor(ct)
+            check curs.next
+            check curs.key.asCollatable == collatable(false)
+            check curs.next
+            check curs.key.asCollatable == collatable(12345)
+            check curs.next
+            check curs.key.asCollatable == collatable("bye", 17)
+            check curs.next
+            check curs.key.asCollatable == collatable("bye", "-ya")
+            check curs.next
+            check curs.key.asCollatable == collatable("hi")
+            check curs.next
+            check curs.key.asCollatable == collatable("hi", -12)
+            check curs.next
+            check curs.key.asCollatable == collatable("hi", 12)
+            check not curs.next

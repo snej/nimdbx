@@ -1,22 +1,27 @@
-# utils.nim
+# Error.nim
 
-import libmdbx
-
-
-######## ERRORS
+import private/libmdbx
 
 
 type MDBXError* = object of CatchableError
     ## A NimDBX exception.
-    code*: MDBX_error_t
+    code*: MDBX_error_t     ## The libmdbx error code
 
 
 proc throw*(code: MDBX_error_t) {.noreturn.} =
-    ## Raises a libmdbx error code as a Nim exception.
-    var x = newException(MDBXError, $mdbx_strerror(cint(code)))
-    x.code = code
-    echo "**** libmdbx error ", int(code), ": ", x.msg # TEMP
-    raise x
+    ## Raises a libmdbx error code as a Nim exception of type MDBXError, or as an OSError.
+    let icode = cint(code)
+    let message = $mdbx_strerror(icode)
+    echo "**** libmdbx error ", int(code), ": ", message # TEMP
+    if icode < 0 or icode == MDBX_EINVAL:
+        var x = newException(MDBXError, message)
+        x.code = code
+        raise x
+    else:
+        # Positive error codes are OS errors, i.e. `errno` values
+        var x = newException(OSError, message)
+        x.errorCode = icode
+        raise x
 
 
 proc check*(code: MDBX_error_t) {.inline.} =
@@ -36,6 +41,8 @@ proc checkOptional*(code: MDBX_error_t): bool {.inline.} =
     else:
         throw(code)
 
+# The libmdbx C functions return `int` not `MDBX_error_t` (for annoying reasons related to C)
+# so here are some overloads that take ints:
 
-proc check*(code: int) {.inline.} = check MDBX_error_t(code)
+proc check*(code: int) {.inline.}               = check MDBX_error_t(code)
 proc checkOptional*(code: int): bool {.inline.} = checkOptional MDBX_error_t(code)

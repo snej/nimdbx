@@ -1,10 +1,12 @@
 # mdbx.nim
 
-import nimdbx/Database, nimdbx/Collection, nimdbx/CRUD, nimdbx/Cursor, nimdbx/Transaction, nimdbx/private/utils
+import nimdbx/[Collatable, Collection, CRUD, Cursor, Data, Database, Error, Transaction]
 
-export Database
+export Collatable
 export Collection
 export CRUD
 export Cursor
-export Transaction
+export Data
+export Database
 export MDBXError
+export Transaction

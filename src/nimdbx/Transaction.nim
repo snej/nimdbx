@@ -1,6 +1,6 @@
 # Transaction.nim
 
-import Database, Collection, private/libmdbx, private/utils
+import Database, Collection, Error, private/libmdbx
 
 
 type

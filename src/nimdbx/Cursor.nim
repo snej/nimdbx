@@ -1,6 +1,6 @@
 # Cursor.nim
 
-import Collection, CRUD, Transaction, private/libmdbx, private/utils
+import Collection, Data, Error, Transaction, private/libmdbx
 
 
 type
@@ -14,6 +14,7 @@ type
         minKey, maxKey: seq[byte]
         minKeyCmp, maxKeyCmp: int
         positioned: bool
+        duplicateKeys: bool
 
 
 proc `=`(dst: var Cursor, src: Cursor) {.error.}
@@ -35,7 +36,7 @@ proc makeCursor*(coll: Collection, snap: Snapshot): Cursor =
     ## ```
     var curs: ptr MDBX_cursor
     check mdbx_cursor_open(snap.txn, coll.dbi, addr curs)
-    return Cursor(curs: curs, owner: snap)
+    return Cursor(curs: curs, owner: snap, duplicateKeys: coll.duplicateKeys)
 
 proc makeCursor*(snap: CollectionSnapshot): Cursor =
     ## Creates a Cursor on a Collection in a Snapshot.
@@ -121,51 +122,91 @@ proc seekExact*(curs: var Cursor, key: Data): bool {.discardable.} =
 
 
 proc first*(curs: var Cursor): bool {.discardable.} =
-    ## Moves to the first key in range; returns false if there is none.
+    ## Moves to the first value of the first key in range; returns false if there is none.
     if curs.minKey.len == 0:
-        return curs.op(MDBX_FIRST)
-    result = curs.seek(curs.minKey)
-    if result and curs.minKeyCmp != 0 and curs.pastMinKey():
-        # Skip first key
-        result = curs.op(MDBX_NEXT)
-    if result and curs.maxKey.len > 0 and curs.pastMaxKey():
-        # First key is after maxKey, so don't include it
-        result = curs.clr()
+        result = curs.op(MDBX_FIRST)
+    else:
+        result = curs.seek(curs.minKey)
+        if result and curs.minKeyCmp != 0 and curs.pastMinKey():
+            # Skip first key
+            result = curs.op(MDBX_NEXT)
+        if result and curs.maxKey.len > 0 and curs.pastMaxKey():
+            # First key is after maxKey, so don't include it
+            result = curs.clr()
 
 
 proc last*(curs: var Cursor): bool {.discardable.} =
-    ## Moves to the last key in range; returns false if there is none.
+    ## Moves to the last value of the last key in range; returns false if there is none.
     if curs.maxKey.len == 0:
-        return curs.op(MDBX_LAST)
-    result = curs.seek(curs.maxKey) or curs.op(MDBX_LAST)
-    if result and curs.pastMaxKey():
-        # The seek overshot, so I need to go back one (or else I'm skipping the exact max key)
-        result = curs.op(MDBX_PREV)
-    if result and curs.minKey.len > 0 and curs.pastMinKey():
-        # Last key is before minKey, so don't include it
-        result = curs.clr()
+        result = curs.op(MDBX_LAST)
+    else:
+        result = curs.seek(curs.maxKey)
+        if result:
+            if curs.pastMaxKey():
+                # The seek overshot, so I need to go back one value:
+                result = curs.op(MDBX_PREV)
+            else:
+                # Seek was OK, so position at last value of this key:
+                if curs.duplicateKeys:
+                    result = curs.op(MDBX_LAST_DUP)
+        else:
+            # maxKey is past the last key, so go to the end:
+            result = curs.op(MDBX_LAST)
+        if result and curs.minKey.len > 0 and curs.pastMinKey():
+            # Last key is before minKey, so don't include it
+            result = curs.clr()
 
 
-proc next*(curs: var Cursor): bool {.discardable.} =
-    ## Moves to the next key; returns false if there is none.
-    ## If this is the first movement of this cursor (i.e. the cursor is not yet at a defined
-    ## position), it moves to the first key, if there is one.
+proc next(curs: var Cursor, op: MDBX_cursor_op): bool {.discardable.} =
     if not curs.positioned:
         return curs.first()
-    result = curs.op(MDBX_NEXT)
+    result = curs.op(op)
     if result and curs.maxKey.len > 0 and curs.pastMaxKey():
         result = curs.clr()
 
-
-proc prev*(curs: var Cursor): bool {.discardable.} =
-    ## Moves to the previous key; returns false if there is none.
-    ## If this is the first movement of this cursor (i.e. the cursor is not yet at a defined
-    ## position), it moves to the last key, if there is one.
+proc prev(curs: var Cursor, op: MDBX_cursor_op): bool {.discardable.} =
     if not curs.positioned:
         return curs.last()
     result = curs.op(MDBX_PREV)
     if result and curs.minKey.len > 0 and curs.pastMinKey():
         result = curs.clr()
+
+
+proc next*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the next value; returns false if there is none.
+    ## If this is the first movement of this cursor (i.e. the cursor is not yet at a defined
+    ## position), it moves to the first key, if there is one.
+    curs.next(MDBX_NEXT)
+
+proc prev*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the previous value; returns false if there is none.
+    ## If this is the first movement of this cursor (i.e. the cursor is not yet at a defined
+    ## position), it moves to the last value of the last key, if there is one.
+    curs.prev(MDBX_PREV)
+
+
+proc nextKey*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the next key's first value; returns false if there is none.
+    ## (This is the same as ``next`` in Collections without ``DuplicateKeys``.)
+    curs.next(MDBX_NEXT_NODUP)
+
+proc prevKey*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the previous key's last value; returns false if there is none.
+    ## (This is the same as ``prev`` in Collections without ``DuplicateKeys``.)
+    curs.prev(MDBX_PREV_NODUP)
+
+
+proc nextDup*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the next value of the same key; returns false if there is none.
+    ## (This only makes sense in Collections with ``DuplicateKeys``.)
+    assert curs.positioned
+    result = curs.op(MDBX_NEXT_DUP)
+
+proc prevDup*(curs: var Cursor): bool {.discardable.} =
+    ## Moves to the previous value of the same key; returns false if there is none.
+    ## (This only makes sense in Collections with ``DuplicateKeys``.)
+    assert curs.positioned
+    result = curs.op(MDBX_PREV_DUP)
 
 
 #%%%%%%% CURSOR ATTRIBUTES

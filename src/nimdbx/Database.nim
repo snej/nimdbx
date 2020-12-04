@@ -1,10 +1,12 @@
-import private/libmdbx, private/utils
+import Error, private/libmdbx
 from os import nil
+import tables
 
 
 type
     DatabaseObj* = object
         m_env {.requiresInit.}: ptr MDBX_env
+        m_collections*: Table[string, ref RootObj]
         #openDBIMutex: mutex    # TODO: Implement this
 
     Database* = ref DatabaseObj
@@ -125,19 +127,24 @@ proc openDatabase*(path: string,
     check mdbx_env_set_userctx(env, cast[pointer](result))  # In case something needs it later
 
 
-proc getDB(env: ptr MDBX_env): Database =
+func getDB(env: ptr MDBX_env): Database =
     cast[Database](mdbx_env_get_userctx(env))
 
-
-proc isOpen*(db: Database): bool {.inline.} =
-    return db != nil and db.m_env != nil
-
-proc mustBeOpen*(db: Database) =
-    if not db.isOpen: raise newException(CatchableError, "Using already-closed Database")
-
-proc env*(db: Database): ptr MDBX_env =
+func env*(db: Database): ptr MDBX_env =
     if db.m_env == nil: raise newException(CatchableError, "Database has been closed")
     return db.m_env
+
+
+func isOpen*(db: Database): bool {.inline.} =
+    return db != nil and db.m_env != nil
+
+func mustBeOpen*(db: Database) =
+    if not db.isOpen: raise newException(CatchableError, "Using already-closed Database")
+
+proc isReadOnly*(db: Database): bool =
+    var envFlags: cuint
+    check mdbx_env_get_flags(db.env, addr envFlags);
+    return (envFlags and cuint(MDBX_RDONLY)) != 0
 
 
 proc stats*(db: Database): MDBX_stat =

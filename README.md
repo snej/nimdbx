@@ -44,6 +44,8 @@ Values are just arbitrary blobs, up to 4GB long.
 
 Keys are arbitrary blobs, up to about 1KB long. The NimDBX API lets you treat a key as Nim `string`, `seq[byte]`, `int32`, or `int64`.
 
+(There is a `Collatable` helper class that encodes multiple values in a single byte array, which lets you use compound (primary/secondary) keys.)
+
 A collection may support **duplicate keys**: multiple records with the same key and distinct values. The values are kept in sorted order too. This is useful when using collections to implement indexes.
 
 When you read data, the API calls return pointers to keys and values. These point directly into the mapped address space of the database file. That's super fast! But it's important to keep in mind that _the data only remains valid for the duration of the snapshot or transaction that you used to read it._ Afterwards, that part of the database might get reused for something else.
@@ -68,7 +70,7 @@ Building should be automatic, thanks to Nimble and [Nimterop](https://github.com
 
 ## Status
 
-This is pretty new code (as of November 2020). It has tests, but hasn't been exercised much yet.
+This is pretty new code (as of December 2020). It has tests, but hasn't been exercised much yet.
 And libMDBX is still under development, though I've found it quite solid.
 
 I plan to expose some more libmdbx features, and add some more idiomatic Nim APIs.
