@@ -190,8 +190,7 @@ proc put*(t: CollectionTransaction, key: Data, valueLen: int, flags: PutFlags | 
         return false
     check err
     # Now pass the value pointer/size to the caller to fill in:
-    let valPtr = cast[ptr UncheckedArray[char]](rawVal.iov_base)
-    fn(valPtr.toOpenArray(0, valueLen - 1))
+    fn( rawVal.asOpenArray )
     callChangeHook(t, rawKey, rawVal, mdbxFlags)
 
 
