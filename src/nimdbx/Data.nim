@@ -152,3 +152,6 @@ converter asCollatable*(d: DataOut): Collatable =
 converter asDataOut*(a: seq[byte]): DataOut =
     if a.len > 0:
         result.val = MDBX_val(iov_base: unsafeAddr a[0], iov_len: csize_t(a.len))
+
+converter asData*(d: DataOut): Data =
+    Data(kind: stringData, m_val: d.val)

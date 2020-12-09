@@ -13,6 +13,9 @@ type
         keyType* {.requiresInit.}  : KeyType
         valueType* {.requiresInit.}: ValueType
         initialized*               : bool       ## False the first time this Collection is opened
+        i_changeHook*              : I_ChangeHook    ## NOT PUBLIC
+
+    I_ChangeHook* = proc(txn: ptr MDBX_txn; key, oldVal, newVal: MDBX_val; flags: MDBX_put_flags_t)
 
     Collection* = ref CollectionObj
         ## A namespace in a Database: a set of key/value pairs.
@@ -140,8 +143,9 @@ proc openCollection*(db: Database,
 
 proc createCollection*(db: Database,
                        name: string,
-                       keyType: KeyType = StringKeys): Collection =
-    openCollection(db, name, {CreateCollection}, keyType)
+                       keyType: KeyType = StringKeys,
+                       valueType: ValueType = BlobValues): Collection =
+    openCollection(db, name, {CreateCollection}, keyType, valueType)
 
 
 proc duplicateKeys*(coll: Collection): bool =

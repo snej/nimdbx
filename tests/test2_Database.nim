@@ -17,6 +17,9 @@ suite "Database":
         db = openDatabase(DBPath)
         coll = db.createCollection(CollectionName)
 
+        # coll.addChangeHook proc(key, oldval, newval: DataOut) =
+        #     echo "\t\tChangeHook! key = ", $key.escape, "  oldVal = ", $oldVal.escape, "  newVal = ", $newVal.escape
+
     teardown:
         if db != nil:
             db.closeAndDelete()

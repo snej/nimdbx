@@ -227,6 +227,10 @@ macro addAll*(coll: var Collatable, args: varargs[typed]) =
         result.add(newCall(bindSym"add", coll, arg))
 
 
+proc clear*(coll: var Collatable) =
+    ## Resets the object back to an empty state.
+    coll.data.setLen(0)
+
 #%%%%%%%% ACCESSORS:
 
 

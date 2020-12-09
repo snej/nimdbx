@@ -68,6 +68,10 @@ proc txn*(s: Snapshot): ptr MDBX_txn =
     return txn
 
 
+proc i_recoverTransaction*(txn: ptr MDBX_txn): Transaction =
+    return cast[Transaction](mdbx_txn_get_userctx(txn))
+
+
 proc finish*(s: Snapshot) =
     ## Ends the snapshot's underlying MDBX transaction, if it's still active.
     ## If the Snapshot is a Transaction, it will be aborted.
@@ -141,6 +145,11 @@ proc with*(coll: Collection, snap: Snapshot): CollectionSnapshot {.inline.} =
 proc with*(coll: Collection, t: Transaction): CollectionTransaction {.inline.} =
     ## Creates a CollectionTransaction, a combination of a Collection and a Transaction.
     CollectionTransaction(collection: coll, snapshot: t)
+
+proc i_with*(coll: Collection, txn: ptr MDBX_txn): CollectionTransaction {.inline.} =
+    let transaction = cast[Transaction](mdbx_txn_get_userctx(txn))
+    assert transaction != nil
+    return coll.with(transaction)
 
 
 proc beginSnapshot*(coll: Collection): CollectionSnapshot =

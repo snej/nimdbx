@@ -49,7 +49,7 @@ const NoKey* = NoData
 proc `[]`*[T,U](snap: CollectionSnapshot, range: HSlice[T,U]): Cursor =
     ## Convenience to create a cursor by subscripting a CollectionSnapshot with a key range:
     ## ```
-    ## for (key,value) in cs["a" .. "z"]:
+    ## for key, value in cs["a" .. "z"]:
     ## ```
     ## Use ``NoKey`` to denote no limit, so for 'everthing starting from "a"' use
     ## ``["a" .. NoKey]``.
