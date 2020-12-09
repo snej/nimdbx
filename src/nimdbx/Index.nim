@@ -31,9 +31,9 @@ proc update(ind: Index; t: ptr MDBX_txn; key, oldValue, newValue: MDBX_val; flag
         echo "INDEX: ", ($DataOut(val: key)).escape, " -> old ", ($DataOut(val: oldValue)).escape, " / new ", ($DataOut(val: newValue)).escape
         # Get the Collatable entries for the old & new values:
         var oldEntry, newEntry: Collatable
-        if oldValue.iov_base != nil:
+        if oldValue.exists:
             ind.indexer(DataOut(val: oldValue), oldEntry)
-        if newValue.iov_base != nil:
+        if newValue.exists:
             ind.indexer(DataOut(val: newValue), newEntry)
         if oldEntry.data != newEntry.data:
             # Entries are different, so remove old one and add new one:

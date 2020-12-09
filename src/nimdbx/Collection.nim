@@ -1,6 +1,6 @@
 # Collection.nim
 
-import Database, Error, private/libmdbx
+import Database, Data, Error, private/libmdbx
 import tables
 
 let nil_DBI = MDBX_dbi(0xFFFFFFFF)
@@ -14,8 +14,6 @@ type
         valueType* {.requiresInit.}: ValueType
         initialized*               : bool       ## False the first time this Collection is opened
         i_changeHook*              : I_ChangeHook    ## NOT PUBLIC
-
-    I_ChangeHook* = proc(txn: ptr MDBX_txn; key, oldVal, newVal: MDBX_val; flags: MDBX_put_flags_t)
 
     Collection* = ref CollectionObj
         ## A namespace in a Database: a set of key/value pairs.
@@ -56,6 +54,8 @@ type
         ReverseStringValues,## Values are strings, compared *backwards*
         FixedSizeValues,    ## Values are all the same size (this helps optimize storage)
         IntegerValues       ## Values are 32- or 64-bit signed ints, all the same size
+
+    I_ChangeHook* = proc(txn: ptr MDBX_txn; key, oldVal, newVal: MDBX_val; flags: MDBX_put_flags_t)
 
 
 const kKeyTypeDBIFlags: array[KeyType, MDBX_db_flags_t] =
@@ -159,3 +159,35 @@ proc dbi*(coll: Collection): MDBX_dbi =
 
 # Looking for the accessor functions to, you know, _do stuff_ with a Collection?
 # They're in CRUD.nim and Transaction.nim.
+
+
+#%%%%%%% CHANGE HOOK
+
+
+proc i_addChangeHook*(coll: Collection, hook: I_ChangeHook) =
+    let prevHook = coll.i_changeHook
+    if prevHook == nil:
+        coll.i_changeHook = hook
+    else:
+        coll.i_changeHook = proc(txn: ptr MDBX_txn; key, oldVal, newVal: MDBX_val; flags: MDBX_put_flags_t) =
+            hook(txn, key, oldVal, newVal, flags)
+            prevHook(txn, key, oldVal, newVal, flags)
+
+
+type ChangeHook* = proc(key, oldValue, newValue: DataOut)
+    ## A callback function that's invoked just after a change to a key/value pair in a Collection.
+    ## - The `oldValue` will be nil if this is an insertion.
+    ## - The `newValue` will be nil if this is a deletion.
+    ##
+    ## It's legal for the callback to make changes to the Database, although of course if it changes
+    ## the Collection it was registered on, it'll be invoked re-entrantly.
+    ##
+    ## As usual with DataOut values, the parameters point to ephemeral data, so if they're going to
+    ## be stored or used after the callback returns, they should be copied to other types (like
+    ## `string`, `seq`, `int`...) first.
+
+
+proc addChangeHook*(coll: Collection, hook: ChangeHook) =
+    ## Registers a ChangeHook with a Collection.
+    coll.i_addChangeHook proc(txn: ptr MDBX_txn; key, oldVal, newVal: MDBX_val; flags: MDBX_put_flags_t) =
+        hook(DataOut(val: key), DataOut(val: oldVal), DataOut(val: newVal))

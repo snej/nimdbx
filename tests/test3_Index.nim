@@ -1,6 +1,6 @@
 # test3_Index.nim
 
-import strformat, strutils, unittest
+import unittest
 import nimdbx
 
 

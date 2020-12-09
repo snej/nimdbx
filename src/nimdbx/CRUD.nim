@@ -3,35 +3,6 @@
 import Collection, Data, Error, Transaction, private/libmdbx
 
 
-#%%%%%%% CHANGE HOOK
-
-
-proc i_addChangeHook*(coll: Collection, hook: I_ChangeHook) =
-    let prevHook = coll.i_changeHook
-    if prevHook == nil:
-        coll.i_changeHook = hook
-    else:
-        coll.i_changeHook = proc(txn: ptr MDBX_txn; key, oldVal, newVal: MDBX_val; flags: MDBX_put_flags_t) =
-            hook(txn, key, oldVal, newVal, flags)
-            prevHook(txn, key, oldVal, newVal, flags)
-
-
-type ChangeHook = proc(key, oldval, newval: DataOut)
-
-
-proc addChangeHook*(coll: Collection, hook: ChangeHook) =
-    coll.i_addChangeHook proc(txn: ptr MDBX_txn; key, oldVal, newVal: MDBX_val; flags: MDBX_put_flags_t) =
-        hook(DataOut(val: key), DataOut(val: oldVal), DataOut(val: newVal))
-
-
-proc callChangeHook(t: CollectionTransaction;
-                    key, oldVal, newVal: MDBX_val,
-                    flags: MDBX_put_flags_t) {.inline.} =
-    let hook = t.collection.i_changeHook
-    if hook != nil:
-        hook(t.txn, key, oldVal, newVal, flags)
-
-
 #%%%%%%% GETTERS
 
 
@@ -101,6 +72,14 @@ proc convertFlags(flags: PutFlags): MDBX_put_flags_t =
 
 proc convertFlags(flag: PutFlag): MDBX_put_flags_t =
     return kPutFlags[int(flag)]
+
+
+proc callChangeHook(t: CollectionTransaction;
+                    key, oldVal, newVal: MDBX_val,
+                    flags: MDBX_put_flags_t) {.inline.} =
+    let hook = t.collection.i_changeHook
+    if hook != nil:
+        hook(t.txn, key, oldVal, newVal, flags)
 
 
 proc i_replace(t: CollectionTransaction; rawKey, rawVal: ptr MDBX_val;
@@ -200,6 +179,9 @@ proc put*(t: CollectionTransaction, key: Data, valueLen: int, flags: PutFlags | 
     ## This eliminates a memory-copy inside libmdbx, and might save you some allocation.
     ## If the write was prevented because of a flag (for example, if ``Insert`` given but a value
     ## already exists) the function returns ``false`` instead of calling the callback.
+
+    # With MDBX_RESERVE, we don't give a pointer to the data. Instead, `mdbx_put` reserves space,
+    # then sets the value pointer to the address where the value should be written.
     var rawKey = key.raw
     var rawVal = MDBX_val(iov_base: nil, iov_len: csize_t(valueLen))
     let mdbxFlags = convertFlags(flags) or MDBX_RESERVE
