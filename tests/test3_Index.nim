@@ -8,7 +8,7 @@ let DBPath = "test_db"
 let CollectionName = "stuff"
 
 
-suite "Database":
+suite "Indexes":
     var db: Database
     var coll: Collection
     var index: Index

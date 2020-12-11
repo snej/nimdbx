@@ -242,22 +242,22 @@ proc clear*(coll: var Collatable) =
 #%%%%%%%% ACCESSORS:
 
 
-proc data*(coll: Collatable): lent seq[byte] =
+func data*(coll: Collatable): lent seq[byte] =
     ## The encoded data.
     return coll.data
 
 
-proc data*(coll: CollatableRef): seq[byte] =
+func data*(coll: CollatableRef): seq[byte] =
     ## The encoded data.
     if coll.data.len == 0:
         return @[]
     return @( toOpenArray(coll.data.unsafeBytes, 0, coll.data.len - 1) )
 
-proc val*(coll: Collatable)   : MDBX_val = mkVal(coll.data)
-proc val*(coll: CollatableRef): MDBX_val = coll.val
+func val*(coll: Collatable)   : MDBX_val = mkVal(coll.data)
+func val*(coll: CollatableRef): MDBX_val = coll.val
 
 
-proc cmp*(a: Collatable | CollatableRef, b: Collatable | CollatableRef): int =
+func cmp*(a: Collatable | CollatableRef, b: Collatable | CollatableRef): int =
     ## Compares two Collatables. This enables `\<`, `==`, `\>`, etc.
     let len = min(a.data.len, b.data.len)
     if len > 0:
@@ -266,7 +266,7 @@ proc cmp*(a: Collatable | CollatableRef, b: Collatable | CollatableRef): int =
             return
     result = a.data.len - b.data.len
 
-proc `==`*(a: Collatable | CollatableRef, b: Collatable | CollatableRef): bool = (cmp(a, b) == 0)
+func `==`*(a: Collatable | CollatableRef, b: Collatable | CollatableRef): bool = (cmp(a, b) == 0)
 
 
 #%%%%%%%% READING / ITERATING:
@@ -289,11 +289,11 @@ type Item* = object
         of StringType:  stringValue*: string
 
 
-proc asCollatable*(data: seq[byte]): Collatable =
+func asCollatable*(data: seq[byte]): Collatable =
     ## Wraps already-encoded data in a Collatable object so it can be added to.
     result.data = data
 
-proc asCollatableRef*(val: MDBX_val): CollatableRef =
+func asCollatableRef*(val: MDBX_val): CollatableRef =
     ## Wraps already-encoded data in a CollatableRef object, without copying it,
     ## so its items can be accessed.
     result.data = val
@@ -330,7 +330,7 @@ iterator items*(coll: CollatableAny): Item {.closure.} =
         yield item
 
 
-proc `[]`*(coll: CollatableAny, index: Natural): Item =
+func `[]`*(coll: CollatableAny, index: Natural): Item =
     ## Returns an item from a Collatable.
     ## If the index is out of range, it returns a `null` item.
     ##
@@ -346,7 +346,7 @@ proc `[]`*(coll: CollatableAny, index: Natural): Item =
 #%%%%%%%% STRING CONVERSION:
 
 
-proc `$`*(o: Item): string =
+func `$`*(o: Item): string =
     ## Converts an item to a string, in JSON format.
     case o.type:
         of NullType:    return "null"
@@ -355,7 +355,7 @@ proc `$`*(o: Item): string =
         of StringType:  return o.stringValue.escape
 
 
-proc `$`*(coll: CollatableAny): string =
+func `$`*(coll: CollatableAny): string =
     ## Converts a Collatable to a string, as a JSON array.
     result = newStringOfCap(coll.data.len)
     result.add("[")

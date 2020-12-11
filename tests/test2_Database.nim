@@ -28,7 +28,7 @@ suite "Database":
     test "create DB":
         check db.path == DBPath
         echo db.stats
-        echo "DBI = ", ord(coll.dbi)
+        echo "DBI = ", ord(coll.i_dbi)
         echo "Stats = ", coll.stats
 
         check db.getOpenCollection(CollectionName) == coll
@@ -79,6 +79,10 @@ suite "Database":
             ct.put("bogus", "equally bogus")
             check ct.del("splat")
             check not ct.del("missing")
+            check ct.updateAndGet("missing", "new") == ""
+            check ct.updateAndGet("bogus", "bogus-er") == "equally bogus"
+            check ct.delAndGet("missing") == ""
+            check ct.delAndGet("bogus") == "bogus-er"
             ct.abort()
 
         cs = coll.beginSnapshot()

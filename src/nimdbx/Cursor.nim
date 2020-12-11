@@ -8,13 +8,12 @@ type
         ## A read-only iterator over the keys/values of a Collection.
         ##
         ## NOTE: Writeable Cursors are not implemented yet.
-        curs {.requiresInit.}: ptr MDBX_cursor
-        owner: Snapshot
+        curs {.requiresInit.} : ptr MDBX_cursor
+        snapshot {.requiresInit.} : CollectionSnapshot
         mdbKey, mdbVal: DataOut
         minKey, maxKey: seq[byte]
         minKeyCmp, maxKeyCmp: int
         positioned: bool
-        duplicateKeys: bool
 
 
 proc `=`(dst: var Cursor, src: Cursor) {.error.}
@@ -24,7 +23,7 @@ proc `=destroy`(curs: var Cursor) =
         mdbx_cursor_close(curs.curs)
 
 
-proc makeCursor*(coll: Collection, snap: Snapshot): Cursor =
+proc makeCursor*(snap: CollectionSnapshot): Cursor =
     ## Creates a Cursor on a Collection in a Snapshot.
     ## The Cursor starts out at an undefined position and must be positioned before its key or value
     ## are accessed. Since the ``next`` function will move an unpositioned cursor to the first key,
@@ -35,12 +34,12 @@ proc makeCursor*(coll: Collection, snap: Snapshot): Cursor =
     ##         doSomethingWith(curs.key, curs.value)
     ## ```
     var curs: ptr MDBX_cursor
-    check mdbx_cursor_open(snap.txn, coll.dbi, addr curs)
-    return Cursor(curs: curs, owner: snap, duplicateKeys: coll.duplicateKeys)
+    check mdbx_cursor_open(snap.i_txn, snap.collection.i_dbi, addr curs)
+    return Cursor(curs: curs, snapshot: snap)
 
-proc makeCursor*(snap: CollectionSnapshot): Cursor =
+proc makeCursor*(coll: Collection, snap: Snapshot): Cursor =
     ## Creates a Cursor on a Collection in a Snapshot.
-    return makeCursor(snap.collection, snap.snapshot)
+    return makeCursor(coll.with(snap))
 
 
 const NoKey* = NoData
@@ -64,17 +63,21 @@ proc close*(curs: var Cursor) =
     if curs.curs != nil:
         mdbx_cursor_close(curs.curs)
         curs.curs = nil
-        curs.owner = nil
+        curs.snapshot.i_clear()
         curs.positioned = false
 
+func isOpen(curs: Cursor): bool {.inline.} = curs.curs != nil
 
-proc minKey*(curs: Cursor): DataOut =  curs.minKey
+func snapshot*(curs: Cursor): CollectionSnapshot {.inline.} = curs.snapshot
+func collection*(curs: Cursor): Collection {.inline.} = curs.snapshot.collection
+
+func minKey*(curs: Cursor): DataOut =  curs.minKey
     ## The minimum key to iterate over, if any.
 
 proc `minKey=`*(curs: var Cursor, key: Data) =  curs.minKey = key
     ## Sets minimum key to iterate over, if any.
 
-proc maxKey*(curs: Cursor): DataOut =  curs.maxKey
+func maxKey*(curs: Cursor): DataOut =  curs.maxKey
     ## The maximum key to iterate over, if any.
 
 proc `maxKey=`*(curs: var Cursor, key: Data) =  curs.maxKey = key
@@ -87,24 +90,25 @@ proc compareKey*(curs: Cursor, withKey: Data): int =
     ## Compares the Cursor's current key with the given value, according to the Collection's
     ## sort order.
     ## Returns 1 if the cursor's key is greater, 0 if equal, -1 if ``withKey`` is greater.
+    assert curs.isOpen
     assert curs.positioned
     var rawKey = withKey.raw
-    return mdbx_cmp(curs.owner.txn, mdbx_cursor_dbi(curs.curs),
+    return mdbx_cmp(curs.snapshot.i_txn, mdbx_cursor_dbi(curs.curs),
                     unsafeAddr curs.mdbKey.val, addr rawKey)
 
 #%%%%%%% CURSOR POSITIONING:
 
 
-proc clr(curs: var Cursor): bool    = curs.mdbKey.clear(); curs.mdbVal.clear(); return false
-proc pastMinKey(curs: Cursor): bool = curs.compareKey(curs.minKey) < curs.minKeyCmp
-proc pastMaxKey(curs: Cursor): bool = curs.compareKey(curs.maxKey) > curs.maxKeyCmp
+proc clearKV(curs: var Cursor): bool = curs.mdbKey.clear(); curs.mdbVal.clear(); return false
+func pastMinKey(curs: Cursor): bool = curs.compareKey(curs.minKey) < curs.minKeyCmp
+func pastMaxKey(curs: Cursor): bool = curs.compareKey(curs.maxKey) > curs.maxKeyCmp
 
 proc op(curs: var Cursor, op: MDBX_cursor_op): bool =
     # Lowest level cursor operation.
-    assert curs.curs != nil
+    assert curs.isOpen
     result = checkOptional mdbx_cursor_get(curs.curs, addr curs.mdbKey.val, addr curs.mdbVal.val, op)
     if not result:
-        result = curs.clr()
+        result = curs.clearKV()
     curs.positioned = true
 
 
@@ -132,7 +136,7 @@ proc first*(curs: var Cursor): bool {.discardable.} =
             result = curs.op(MDBX_NEXT)
         if result and curs.maxKey.len > 0 and curs.pastMaxKey():
             # First key is after maxKey, so don't include it
-            result = curs.clr()
+            result = curs.clearKV()
 
 
 proc last*(curs: var Cursor): bool {.discardable.} =
@@ -147,14 +151,14 @@ proc last*(curs: var Cursor): bool {.discardable.} =
                 result = curs.op(MDBX_PREV)
             else:
                 # Seek was OK, so position at last value of this key:
-                if curs.duplicateKeys:
+                if curs.snapshot.collection.duplicateKeys:
                     result = curs.op(MDBX_LAST_DUP)
         else:
             # maxKey is past the last key, so go to the end:
             result = curs.op(MDBX_LAST)
         if result and curs.minKey.len > 0 and curs.pastMinKey():
             # Last key is before minKey, so don't include it
-            result = curs.clr()
+            result = curs.clearKV()
 
 
 proc next(curs: var Cursor, op: MDBX_cursor_op): bool {.discardable.} =
@@ -162,14 +166,14 @@ proc next(curs: var Cursor, op: MDBX_cursor_op): bool {.discardable.} =
         return curs.first()
     result = curs.op(op)
     if result and curs.maxKey.len > 0 and curs.pastMaxKey():
-        result = curs.clr()
+        result = curs.clearKV()
 
 proc prev(curs: var Cursor, op: MDBX_cursor_op): bool {.discardable.} =
     if not curs.positioned:
         return curs.last()
     result = curs.op(MDBX_PREV)
     if result and curs.minKey.len > 0 and curs.pastMinKey():
-        result = curs.clr()
+        result = curs.clearKV()
 
 
 proc next*(curs: var Cursor): bool {.discardable.} =
@@ -212,37 +216,40 @@ proc prevDup*(curs: var Cursor): bool {.discardable.} =
 #%%%%%%% CURSOR ATTRIBUTES
 
 
-proc key*(curs: var Cursor): lent DataOut =
+func key*(curs: var Cursor): lent DataOut =
     ## Returns the current key, if any.
     assert curs.positioned
     return curs.mdbKey
 
-proc value*(curs: var Cursor): lent DataOut =
+func value*(curs: var Cursor): lent DataOut =
     ## Returns the current value, if any.
     assert curs.positioned
     return curs.mdbVal
 
-proc valueLen*(curs: var Cursor): int =
+func valueLen*(curs: var Cursor): int =
     ## Returns the length of the current value, in bytes.
     assert curs.positioned
     return int(curs.mdbVal.val.iov_len)
 
-proc hasValue*(curs: var Cursor): bool =
+func hasValue*(curs: var Cursor): bool =
     ## Returns true if the Cursor is at a valid key & value (i.e. is not past the end.)
     assert curs.positioned
     return curs.mdbVal.exists
 
 proc onFirst*(curs: Cursor): bool =
     ## Returns true if the cursor is positioned at the first key of the collection.
+    assert curs.isOpen
     curs.positioned and mdbx_cursor_on_first(curs.curs) == MDBX_RESULT_TRUE
 
 proc onLast* (curs: Cursor): bool =
     ## Returns true if the cursor is positioned at the last key of the collection.
+    assert curs.isOpen
     curs.positioned and mdbx_cursor_on_last(curs.curs) == MDBX_RESULT_TRUE
 
 proc valueCount*(curs: Cursor): int =
     ## Returns the number of values for the current key.
     ## (This is always 1 unless the Collection supports ``DuplicateKeys``)
+    assert curs.isOpen
     var count: csize_t
     check mdbx_cursor_count(curs.curs, addr count)
     return int(count)

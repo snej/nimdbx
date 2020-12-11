@@ -38,7 +38,7 @@ converter exists*(d: Data): bool =
     of stringData: return d.m_val.exists
     else:          return true
 
-proc `not`*(d: Data): bool = not d.exists
+func `not`*(d: Data): bool = not d.exists
 
 template raw*(d: Data): MDBX_val =
     ## Returns an ``MDBX_val`` that points to the value in a ``Data``.
@@ -118,7 +118,7 @@ proc clear*(d: var DataOut) =
 converter asString*(d: DataOut): string =
     d.val.asString()
 
-proc `$`*(d: DataOut): string = d.asString()
+func `$`*(d: DataOut): string = d.asString()
 
 converter asCharSeq*(d: DataOut): seq[char] = asSeq[char](d.val)
 converter asByteSeq*(d: DataOut): seq[byte] = asSeq[byte](d.val)

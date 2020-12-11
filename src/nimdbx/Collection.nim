@@ -72,7 +72,7 @@ proc openDBI(db: Database, name: string, flags: MDBX_db_flags_t): (MDBX_dbi, boo
     let readOnly = db.isReadOnly
     var txn: ptr MDBX_txn
     let txnFlags = if readOnly: MDBX_TXN_RDONLY else: MDBX_TXN_READWRITE
-    check mdbx_txn_begin(db.env, nil, txnFlags, addr txn)
+    check mdbx_txn_begin(db.i_env, nil, txnFlags, addr txn)
 
     var dbi: MDBX_dbi
     let err = mdbx_dbi_open(txn, name, flags, addr dbi)
@@ -91,9 +91,9 @@ proc openDBI(db: Database, name: string, flags: MDBX_db_flags_t): (MDBX_dbi, boo
     return (dbi, preexisting);
 
 
-proc getOpenCollection*(db: Database, name: string): Collection =
+func getOpenCollection*(db: Database, name: string): Collection =
     ## Returns an already-opened Collection with the given name, or nil.
-    return Collection(db.m_collections.getOrDefault(name))
+    return Collection(db.i_collections.getOrDefault(name))
 
 
 proc openCollection*(db: Database,
@@ -139,7 +139,8 @@ proc openCollection*(db: Database,
 
     result = Collection(name: name, db: db, m_dbi: dbi, keyType: keyType, valueType: valueType,
                         initialized: preexisting)
-    db.m_collections[name] = result
+    db.i_collections[name] = result
+
 
 proc createCollection*(db: Database,
                        name: string,
@@ -148,17 +149,18 @@ proc createCollection*(db: Database,
     openCollection(db, name, {CreateCollection}, keyType, valueType)
 
 
-proc duplicateKeys*(coll: Collection): bool =
+func duplicateKeys*(coll: Collection): bool =
     ## True if the Collection supports duplicate keys.
     coll.valueType > BlobValues
 
-proc dbi*(coll: Collection): MDBX_dbi =
+
+func i_dbi*(coll: Collection): MDBX_dbi =
     coll.db.mustBeOpen()
     return coll.m_dbi
 
 
 # Looking for the accessor functions to, you know, _do stuff_ with a Collection?
-# They're in CRUD.nim and Transaction.nim.
+# They're in the CRUD, Cursor and Transaction modules.
 
 
 #%%%%%%% CHANGE HOOK
