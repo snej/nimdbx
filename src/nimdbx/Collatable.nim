@@ -1,10 +1,10 @@
 # Collatable.nim
 
+{.experimental: "strictFuncs".}
+
 import macros, strutils
 import private/[libmdbx, vals]
 
-proc c_memcmp(a, b: pointer, size: csize_t): cint {.
-  importc: "memcmp", header: "<string.h>", noSideEffect.}
 
 
 ## Introduction
@@ -259,14 +259,9 @@ func val*(coll: CollatableRef): MDBX_val = coll.val
 
 func cmp*(a: Collatable | CollatableRef, b: Collatable | CollatableRef): int =
     ## Compares two Collatables. This enables `\<`, `==`, `\>`, etc.
-    let len = min(a.data.len, b.data.len)
-    if len > 0:
-        result = c_memcmp(unsafeAddr a.data[0], unsafeAddr b.data[0], csize_t(len))
-        if result != 0:
-            return
-    result = a.data.len - b.data.len
+    return dataCmp(unsafeAddr a.data[0], a.data.len, unsafeAddr b.data[0], b.data.len)
 
-func `==`*(a: Collatable | CollatableRef, b: Collatable | CollatableRef): bool = (cmp(a, b) == 0)
+#func `==`*(a: Collatable | CollatableRef, b: Collatable | CollatableRef): bool = (cmp(a, b) == 0)
 
 
 #%%%%%%%% READING / ITERATING:

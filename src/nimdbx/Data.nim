@@ -1,5 +1,7 @@
 # Data.nim
 
+{.experimental: "strictFuncs".}
+
 import Collatable, Error
 import private/libmdbx, private/vals
 import strformat
@@ -111,6 +113,8 @@ proc `=`(dst: var DataOut, src: DataOut) {.error.}
 
 converter exists*(d: DataOut): bool {.inline} = d.val.exists
 proc `not`*(d: DataOut): bool {.inline}       = not d.exists
+
+func `==`*(a, b: DataOut): bool = a.val == b.val
 
 proc clear*(d: var DataOut) =
     d.val = MDBX_val()

@@ -1,5 +1,8 @@
 # CRUD.nim
 
+{.experimental: "notnil".}
+{.experimental: "strictFuncs".}
+
 import Collection, Data, Error, Transaction, private/[libmdbx, vals]
 
 
@@ -21,8 +24,8 @@ proc `[]`*(snap: CollectionSnapshot, key: Data): DataOut = snap.get(key)
 
 proc getGreaterOrEqual*(snap: CollectionSnapshot, key: Data): (DataOut, DataOut) =
     ## Finds the first key *greater than or equal to* ``key``.
-    ## If found, returns its value and updates ``key`` to the actual key.
-    ## If not found, returns nil Data and sets ``key`` to nil.
+    ## If found, returns the actual key and its value as a tuple.
+    ## If not found, returns an empty/nil key and value.
     var rawKey = key.raw
     var value: DataOut
     if checkOptional mdbx_get_equal_or_great(snap.i_txn, snap.collection.i_dbi,
@@ -32,7 +35,7 @@ proc getGreaterOrEqual*(snap: CollectionSnapshot, key: Data): (DataOut, DataOut)
 
 proc get*(snap: CollectionSnapshot,
           key: Data,
-          fn: proc(val:openarray[char])): bool {.discardable.} =
+          fn: proc(val:openarray[char]) not nil): bool {.discardable.} =
     ## Looks up the value of a key in a Collection; if found, it passes it to the callback
     ## function as an ``openarray``, *without copying*, then returns true.
     ## If not found, the callback is not called, and the result is false.
@@ -82,8 +85,9 @@ proc callChangeHook(t: CollectionTransaction;
         hook(t.i_txn, key, oldVal, newVal, flags)
 
 
-proc i_replace(t: CollectionTransaction;
-               rawKey, rawVal: ptr MDBX_val;
+proc i_replace(t: CollectionTransaction,
+               rawKey: ptr MDBX_val not nil,
+               rawVal: ptr MDBX_val,
                mdbxFlags: MDBX_put_flags_t,
                outOldValue: ptr string = nil): MDBX_error_t =
     var rawOldVal: MDBX_val

@@ -1,5 +1,7 @@
 # test3_Index.nim
 
+{.experimental: "notnil".}
+
 import unittest
 import nimdbx
 
@@ -10,7 +12,7 @@ let CollectionName = "stuff"
 
 suite "Indexes":
     var db: Database
-    var coll: Collection
+    var coll: Collection not nil
     var index: Index
 
     setup:
@@ -45,6 +47,7 @@ suite "Indexes":
     test "Index populated DB":
         addSomething()
         createLengthIndex()
+        check index.updateCount == 0
 
         let snap = index.beginSnapshot()
         check snap.entryCount == 2
@@ -57,6 +60,7 @@ suite "Indexes":
     test "Populate DB then index":
         createLengthIndex()
         addSomething()
+        check index.updateCount == 2
 
         let snap = index.beginSnapshot()
         check snap.entryCount == 2
@@ -75,6 +79,16 @@ suite "Indexes":
             check ct.update("foo", "bar")
             ct.put("longer", "I am the very model of a modern Major General.")
             check ct.del("splat")
+            check index.updateCount == 3
+
+            # Changes that do not affect the index:
+            check ct.update("foo", "bar")
+            check index.updateCount == 3
+            check ct.update("foo", "rab")
+            check index.updateCount == 3
+            discard ct.del("missing")
+            check index.updateCount == 3
+
             ct.commit
 
         let snap = index.beginSnapshot()

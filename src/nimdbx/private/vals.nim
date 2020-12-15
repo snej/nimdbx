@@ -8,6 +8,10 @@ import strformat
 ## Not intended to be public, since `MDBX_val` is not public; `Data` is the public abstraction.
 
 
+proc c_memcmp(a, b: pointer, size: csize_t): cint {.
+  importc: "memcmp", header: "<string.h>", noSideEffect.}
+
+
 #%%%%%%%% FACTORIES
 
 
@@ -68,3 +72,18 @@ func asString*(val: MDBX_val): string =
 
 template asOpenArray*(val: MDBX_val): openarray[byte] =
     toOpenArray(unsafeBytes(val), 0, val.len - 1)
+
+
+func dataCmp*(ptr1: pointer, len1: int, ptr2: pointer, len2: int): int =
+    ## Compares the `len1` bytes at `ptr` with the `len2` bytes at `ptr2`.
+    let len = min(len1, len2)
+    if len > 0:
+        result = c_memcmp(ptr1, ptr2, csize_t(len))
+        if result != 0:
+            return
+    result = len1 - len2
+
+
+func cmp*(a, b: MDBX_val): int =
+    ## Compares data of two MDBX_vals. This enables `\<`, `==`, `\>`, etc.
+    return dataCmp(a.iov_base, int(a.iov_len), b.iov_base, int(b.iov_len))

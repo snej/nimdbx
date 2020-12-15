@@ -1,5 +1,8 @@
 # Cursor.nim
 
+{.experimental: "notnil".}
+{.experimental: "strictFuncs".}
+
 import Collection, Data, Error, Transaction, private/libmdbx
 
 
@@ -37,7 +40,7 @@ proc makeCursor*(snap: CollectionSnapshot): Cursor =
     check mdbx_cursor_open(snap.i_txn, snap.collection.i_dbi, addr curs)
     return Cursor(curs: curs, snapshot: snap)
 
-proc makeCursor*(coll: Collection, snap: Snapshot): Cursor =
+proc makeCursor*(coll: Collection not nil, snap: Snapshot): Cursor =
     ## Creates a Cursor on a Collection in a Snapshot.
     return makeCursor(coll.with(snap))
 
@@ -216,22 +219,22 @@ proc prevDup*(curs: var Cursor): bool {.discardable.} =
 #%%%%%%% CURSOR ATTRIBUTES
 
 
-func key*(curs: var Cursor): lent DataOut =
+func key*(curs: Cursor): lent DataOut =
     ## Returns the current key, if any.
     assert curs.positioned
     return curs.mdbKey
 
-func value*(curs: var Cursor): lent DataOut =
+func value*(curs: Cursor): lent DataOut =
     ## Returns the current value, if any.
     assert curs.positioned
     return curs.mdbVal
 
-func valueLen*(curs: var Cursor): int =
+func valueLen*(curs: Cursor): int =
     ## Returns the length of the current value, in bytes.
     assert curs.positioned
     return int(curs.mdbVal.val.iov_len)
 
-func hasValue*(curs: var Cursor): bool =
+func hasValue*(curs: Cursor): bool =
     ## Returns true if the Cursor is at a valid key & value (i.e. is not past the end.)
     assert curs.positioned
     return curs.mdbVal.exists
@@ -254,7 +257,7 @@ proc valueCount*(curs: Cursor): int =
     check mdbx_cursor_count(curs.curs, addr count)
     return int(count)
 
-converter toBool*(curs: var Cursor): bool = curs.hasValue
+converter toBool*(curs: Cursor): bool = curs.hasValue
     ## A Cursor can be tested as a bool, to check if it has a value.
 
 

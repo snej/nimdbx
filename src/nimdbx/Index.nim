@@ -1,23 +1,47 @@
 # Index.nim
 
+{.experimental: "notnil".}
+# {.experimental: "strictFuncs".}
+
 import Collatable, Collection, CRUD, Cursor, Data, Transaction
 import private/libmdbx
 import strformat
 
 
+# An index is stored as a Collection whose name is of the form "index::<source>::<name>",
+# where <source> is the name of the Collection being indexed, and <name> is the index's name.
+#
+# An index's keys are Collatable; these are produced by its IndexFunc.
+# Its values are keys in the source collection, so its ValueType is the source's KeyType.
+# Indexes always support duplicate keys.
+#
+# In other words, an entry in an index maps a Collatable value produced by the IndexFunc
+# (the property being indexed) to the key in the source collection of the value that was indexed.
+# For this reason it's sometimes called an "inverted index".
+#
+# The index is initially populated by the `rebuild` method, which iterates over the source
+# Collection, calls the IndexFunc on each value, and if a non-empty Collatable is produced it
+# writes that and the key to the index Collection.
+#
+# The index is updated by `updateEntry`, which is called as a changeHook on the Collection.
+# `updateEntry` has to call the IndexFunc on both the old and the new value. If the resulting
+# Collatables are different, it then deletes the old Collatable key and inserts the new one.
+
+
 type
     IndexObj = object
-        source {.requiresInit.}: Collection
-        index {.requiresInit.}: Collection
         name: string
+        source {.requiresInit.}: Collection not nil
+        index {.requiresInit.}: Collection not nil
         indexer {.requiresInit.}: IndexFunc
+        updateCount*: int
 
     Index* = ref IndexObj
         ## An object that maintains an index of a Collection.
         ## The index is stored as a separate Collection, that can be queried using key-value
         ## getters or Cursors.
 
-    IndexFunc* = proc(value: DataOut, outColumns: var Collatable) {.nosideeffect.}
+    IndexFunc* = proc(value: DataOut, outColumns: var Collatable) {.nosideeffect, raises: [].}
         ## A user-supplied function that's given a value from the source Collection
         ## and writes the column value(s) to be indexed, if any, into a Collatable.
         ##
@@ -26,28 +50,32 @@ type
         ## corrupted.
 
 
-proc update(ind: Index; t: ptr MDBX_txn; key, oldValue, newValue: MDBX_val; flags: MDBX_put_flags_t) =
-    if ind.index == nil:
-        return
-    try:
-        #echo "INDEX: ", ($DataOut(val: key)).escape, " -> old ", ($DataOut(val: oldValue)).escape, " / new ", ($DataOut(val: newValue)).escape
-        # Get the Collatable entries for the old & new values:
-        var oldEntry, newEntry: Collatable
-        if oldValue.exists:
-            ind.indexer(DataOut(val: oldValue), oldEntry)
-        if newValue.exists:
-            ind.indexer(DataOut(val: newValue), newEntry)
-        if oldEntry.data != newEntry.data:
-            # Entries are different, so remove old one and add new one:
-            let txn = ind.index.with(i_recoverTransaction(t))
-            if oldEntry.data.len > 0:
-                txn.del(oldEntry.data)
-            if newEntry.data.len > 0:
-                txn.put(newEntry.data, key)
-    except:
-        let x = getCurrentException()
-        echo "EXCEPTION updating index ", ind.index.name, ": ", x.name, " ", x.msg
-        writeStackTrace()
+proc updateEntry(ind: Index; txn: ptr MDBX_txn; key, oldValue, newValue: MDBX_val;
+                 flags: MDBX_put_flags_t): bool =
+    if ind.indexer == nil:
+        return false
+    elif newValue != oldValue:
+        try:
+            #echo "INDEX: ", ($DataOut(val: key)).escape, " -> old ", ($DataOut(val: oldValue)).escape, " / new ", ($DataOut(val: newValue)).escape
+            # Get the Collatable entries for the old & new values:
+            var oldEntry, newEntry: Collatable
+            if oldValue.exists:
+                ind.indexer(DataOut(val: oldValue), oldEntry)
+            if newValue.exists:
+                ind.indexer(DataOut(val: newValue), newEntry)
+            if oldEntry != newEntry:
+                # Entries are different, so remove old one and add new one:
+                let txn = ind.index.with(i_recoverTransaction(txn))
+                if oldEntry.data.len > 0:
+                    discard txn.del(oldEntry.data, key)
+                if newEntry.data.len > 0:
+                    discard txn.insert(newEntry.data, key)
+                ind.updateCount += 1
+        except:
+            let x = getCurrentException()
+            echo "EXCEPTION updating index ", ind.index.name, ": ", x.name, " ", x.msg
+            writeStackTrace()
+    return true
 
 
 proc rebuild*(ind: Index) =
@@ -61,12 +89,13 @@ proc rebuild*(ind: Index) =
             entry.clear()
             ind.indexer(val, entry)
             if entry.data.len > 0:
-                ct.put(entry.data, key)
+                discard ct.insert(entry.data, key)
         ct.commit()
     ind.index.initialized = true
+    ind.updateCount = 0
 
 
-proc openIndex*(on: Collection, name: string, indexer: IndexFunc): Index =
+proc openIndex*(on: Collection not nil, name: string, indexer: IndexFunc not nil): Index =
     ## Opens or creates a named index on a Collection.
     ## If this is the first time this Index has been opened, it will be populated based on all
     ## the key/value pairs in the Collection.
@@ -85,11 +114,13 @@ proc openIndex*(on: Collection, name: string, indexer: IndexFunc): Index =
                                          {CreateCollection, DuplicateKeys},
                                          StringKeys,
                                          valueType)
-    let index = Index(source: on, index: indexColl, name: name, indexer: indexer)
+    var index = Index(source: on, index: indexColl, name: name, indexer: indexer)
     if not index.index.initialized:
         index.rebuild()
+
     on.i_addChangeHook proc(t: ptr MDBX_txn; key, oldValue, newValue: MDBX_val; flags: MDBX_put_flags_t) =
-        index.update(t, key, oldValue, newValue, flags)
+        if index != nil and not index.updateEntry(t, key, oldValue, newValue, flags):
+            index = nil    # breaks ref and prevents further calls after index closes
     return index
 
 
@@ -115,10 +146,7 @@ proc entryCount*(ind: Index): int =
 
 proc deleteIndex*(idx: Index) =
     ## Persistently deletes the index on disk.
-    let indexColl = idx.index
-    idx.source = nil
-    idx.index = nil
     idx.indexer = nil
-    indexColl.inTransaction do (ct: CollectionTransaction):
+    idx.index.inTransaction do (ct: CollectionTransaction):
         ct.deleteCollection()
         ct.commit

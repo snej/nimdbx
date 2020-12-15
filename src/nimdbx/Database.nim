@@ -1,3 +1,8 @@
+# Database.nim
+
+{.experimental: "notnil".}
+{.experimental: "strictFuncs".}
+
 import Error, private/libmdbx
 from os import nil
 import tables
@@ -8,7 +13,7 @@ type
         m_env {.requiresInit.}: ptr MDBX_env
         m_collections: Table[string, ref RootObj]
 
-    Database* = ref DatabaseObj
+    Database* = ref DatabaseObj not nil
         ## An open database file. Data is stored in Collections within it.
 
     DatabaseFlag* = enum

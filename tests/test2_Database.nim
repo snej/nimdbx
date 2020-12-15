@@ -1,5 +1,7 @@
 # testDatabase.nim
 
+{.experimental: "notnil".}
+
 import strformat, unittest
 import nimdbx
 
@@ -10,7 +12,7 @@ let CollectionName = "stuff"
 
 suite "Database":
     var db: Database
-    var coll: Collection
+    var coll: Collection not nil
 
     setup:
         eraseDatabase(DBPath)
@@ -32,7 +34,7 @@ suite "Database":
         echo "Stats = ", coll.stats
 
         check db.getOpenCollection(CollectionName) == coll
-        check db.openCollection("missing", {}) == nil
+        check db.openCollectionOrNil("missing", {}) == nil
 
     test "Sequences":
         var cs = coll.beginSnapshot()

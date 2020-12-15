@@ -1,5 +1,8 @@
 # Transaction.nim
 
+{.experimental: "notnil".}
+{.experimental: "strictFuncs".}
+
 import Database, Collection, Error, private/libmdbx
 
 
@@ -8,12 +11,14 @@ type
         m_txn {.requiresInit.}: ptr MDBX_txn
         database {.requiresInit.}: Database
 
-    Snapshot* = ref SnapshotObj
+    TransactionObj = object of SnapshotObj
+
+    Snapshot* = ref SnapshotObj not nil
         ## A read-only view of the database. The contents of this view are fixed at the moment the
         ## Snapshot was created and will not change, even if a concurrent Transaction commits
         ## changes.
 
-    Transaction* = ref object of SnapshotObj
+    Transaction* = ref TransactionObj not nil
         ## A writeable view of the database. Changes are saved permanently when ``commit`` is
         ## called, or abandoned if ``abort`` is called or the Transaction is destroyed without
         ## committing.
@@ -86,7 +91,7 @@ proc finish*(s: Snapshot) =
     if txn != nil:
         check mdbx_txn_abort(txn)
         s.m_txn = nil
-        s.database = nil
+        # s.database = nil
 
 
 proc commit*(t: Transaction) =
@@ -95,7 +100,7 @@ proc commit*(t: Transaction) =
     ## finished.
     check mdbx_txn_commit(t.i_txn)
     t.m_txn = nil
-    t.database = nil
+    # t.database = nil
 
 
 proc abort*(t: Transaction) =
@@ -104,7 +109,7 @@ proc abort*(t: Transaction) =
     ## finished.
     check mdbx_txn_abort(t.i_txn)
     t.m_txn = nil
-    t.database = nil
+    # t.database = nil
 
 
 proc inSnapshot*(db: Database, fn: proc(t:Snapshot)) =
@@ -130,42 +135,43 @@ proc inTransaction*(db: Database, fn: proc(t:Transaction)) =
 type
     CollectionSnapshot* = object of RootObj
         ## A reference to a Collection, as viewed through a Snapshot.
-        collection {.requiresInit.}: Collection
+        collection {.requiresInit.}: Collection not nil
         snapshot {.requiresInit.}: Snapshot
 
     CollectionTransaction* = object of CollectionSnapshot
         ## A reference to a Collection, in a Transaction.
 
 proc i_clear*(s: var CollectionSnapshot) {.inline.} =
-    s.collection = nil
-    s.snapshot = nil
+    discard
+    #s.collection = nil
+    #s.snapshot = nil
 
 func i_txn*(snap: CollectionSnapshot): ptr MDBX_txn = snap.snapshot.i_txn
 
 
-func collection*(s: CollectionSnapshot) : Collection {.inline.} = s.collection
+func collection*(s: CollectionSnapshot) : Collection not nil = s.collection
 func snapshot*(s: CollectionSnapshot) : Snapshot {.inline.} = s.snapshot
 func transaction*(t: CollectionTransaction) : Transaction {.inline.} = cast[Transaction](t.snapshot)
 
 
-func with*(coll: Collection, snap: Snapshot): CollectionSnapshot {.inline.} =
+func with*(coll: Collection not nil, snap: Snapshot): CollectionSnapshot {.inline.} =
     ## Creates a CollectionSnapshot, a combination of a Collection and a Snapshot.
     CollectionSnapshot(collection: coll, snapshot: snap)
 
-func with*(coll: Collection, t: Transaction): CollectionTransaction {.inline.} =
+func with*(coll: Collection not nil, t: Transaction): CollectionTransaction {.inline.} =
     ## Creates a CollectionTransaction, a combination of a Collection and a Transaction.
     CollectionTransaction(collection: coll, snapshot: t)
 
-func i_with*(coll: Collection, txn: ptr MDBX_txn): CollectionTransaction =
+func i_with*(coll: Collection not nil, txn: ptr MDBX_txn): CollectionTransaction =
     let transaction = cast[Transaction](mdbx_txn_get_userctx(txn))
     assert transaction != nil
     return coll.with(transaction)
 
 
-proc beginSnapshot*(coll: Collection): CollectionSnapshot =
+proc beginSnapshot*(coll: Collection not nil): CollectionSnapshot =
     ## A convenience function that creates a new Snapshot and returns it scoped to a Collection.
     return CollectionSnapshot(collection: coll, snapshot: coll.db.beginSnapshot())
-proc beginTransaction*(coll: Collection): CollectionTransaction =
+proc beginTransaction*(coll: Collection not nil): CollectionTransaction =
     ## A convenience function that creates a new Transaction and returns it scoped to a Collection.
     return CollectionTransaction(collection: coll, snapshot: coll.db.beginTransaction())
 
@@ -178,14 +184,14 @@ proc abort*(t: CollectionTransaction)  = t.transaction.abort()
     ## Calls ``abort`` on the underlying Transaction.
 
 
-proc inSnapshot*(coll: Collection, fn: proc(t:CollectionSnapshot)) =
+proc inSnapshot*(coll: Collection not nil, fn: proc(t:CollectionSnapshot)) =
     ## Runs a callback within a new CollectionSnapshot.
     ## The snapshot is automatically finished after the callback returns.
     let s = coll.beginSnapshot()
     defer: s.finish()
     fn(s)
 
-proc inTransaction*(coll: Collection, fn: proc(t:CollectionTransaction)) =
+proc inTransaction*(coll: Collection not nil, fn: proc(t:CollectionTransaction)) =
     ## Runs a callback within a new CollectionTransaction.
     ##
     ## NOTE: The callback is responsible for committing the transaction, otherwise it will be
@@ -229,12 +235,18 @@ proc stats*(s: CollectionSnapshot): MDBX_stat =
     return stat
 
 
-proc stats*(coll: Collection): MDBX_stat =
+proc stats*(coll: Collection not nil): MDBX_stat =
     ## Returns low-level information about a Collection.
     return coll.beginSnapshot().stats()
 
 
-proc entryCount*(coll: Collection | CollectionSnapshot): int =
+type CollectionNotNil = Collection not nil
+
+proc entryCount*(coll: Collection not nil): int =
+    ## The number of key/value pairs in the collection.
+    return int(coll.stats.ms_entries)
+
+proc entryCount*(coll: CollectionSnapshot): int =
     ## The number of key/value pairs in the collection.
     return int(coll.stats.ms_entries)
 
