@@ -41,13 +41,16 @@ type
         ## The index is stored as a separate Collection, that can be queried using key-value
         ## getters or Cursors.
 
-    IndexFunc* = proc(value: DataOut, outColumns: var Collatable) {.nosideeffect, raises: [].}
+    EmitFunc* = proc(indexKey: Collatable)
+        ## A callback given to an IndexFunc, to be called by that function for each entry to add
+        ## to the index.
+
+    IndexFunc* = proc(value: DataOut, emit: EmitFunc)
         ## A user-supplied function that's given a value from the source Collection
-        ## and writes the column value(s) to be indexed, if any, into a Collatable.
+        ## and calls the `emit` function with value(s) to be indexed, if any.
         ##
         ## NOTE: It's very important that this function be repeatable: given the same `value` it
-        ## should always write the same value(s) to `outColumns`. Otherwise the index will be
-        ## corrupted.
+        ## should always emit the same index keys. Otherwise the index will get mixed up.
 
 
 proc updateEntry(ind: Index; txn: ptr MDBX_txn; key, oldValue, newValue: MDBX_val;
@@ -57,19 +60,34 @@ proc updateEntry(ind: Index; txn: ptr MDBX_txn; key, oldValue, newValue: MDBX_va
     elif newValue != oldValue:
         try:
             #echo "INDEX: ", ($DataOut(val: key)).escape, " -> old ", ($DataOut(val: oldValue)).escape, " / new ", ($DataOut(val: newValue)).escape
-            # Get the Collatable entries for the old & new values:
-            var oldEntry, newEntry: Collatable
+            let ct = ind.index.with(i_recoverTransaction(txn))
+            var firstDel, firstIns: Collatable   # cache the first `emit` call on old and new value
+            var updated = false
+
             if oldValue.exists:
-                ind.indexer(DataOut(val: oldValue), oldEntry)
+                ind.indexer(DataOut(val: oldValue)) do (indexValue: Collatable):
+                    if firstDel.isEmpty:
+                        firstDel = indexValue
+                    elif not indexValue.isEmpty:
+                        discard ct.del(indexValue, key)
+                        updated = true
+
             if newValue.exists:
-                ind.indexer(DataOut(val: newValue), newEntry)
-            if oldEntry != newEntry:
-                # Entries are different, so remove old one and add new one:
-                let txn = ind.index.with(i_recoverTransaction(txn))
-                if oldEntry.data.len > 0:
-                    discard txn.del(oldEntry.data, key)
-                if newEntry.data.len > 0:
-                    discard txn.insert(newEntry.data, key)
+                ind.indexer(DataOut(val: newValue)) do (indexValue: Collatable):
+                    if firstIns.isEmpty:
+                        firstIns = indexValue
+                    elif not indexValue.isEmpty:
+                        discard ct.insert(indexValue, key)
+                        updated = true
+
+            # See if the first-emitted values for old/new data are different:
+            if firstDel != firstIns:
+                if not firstDel.isEmpty:
+                    discard ct.del(firstDel, key)
+                if not firstIns.isEmpty:
+                    discard ct.insert(firstIns, key)
+                updated = true
+            if updated:
                 ind.updateCount += 1
         except:
             let x = getCurrentException()
@@ -84,12 +102,9 @@ proc rebuild*(ind: Index) =
     ## indexer function.
     ind.index.inTransaction do (ct: CollectionTransaction):
         ct.delAll()
-        var entry: Collatable
         for key, val in ind.source.with(ct.snapshot):
-            entry.clear()
-            ind.indexer(val, entry)
-            if entry.data.len > 0:
-                discard ct.insert(entry.data, key)
+            ind.indexer(val) do (indexValue: Collatable):
+                discard ct.insert(indexValue, key)
         ct.commit()
     ind.index.initialized = true
     ind.updateCount = 0

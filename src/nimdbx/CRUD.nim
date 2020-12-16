@@ -155,9 +155,10 @@ proc `[]=`*(t: CollectionTransaction, key: Data, value: Data) =
 
 
 proc insert*(t: CollectionTransaction, key: Data, val: Data): bool =
-    ## Adds a new key and its value; if the key exists, does nothing and returns false.
+    ## Adds a new key and its value; if it already exists, does nothing and returns false.
     ## (Same as ``put`` with the ``Insert`` flag.)
-    return t.i_put(key, val, MDBX_NOOVERWRITE) == MDBX_SUCCESS
+    let flag = if t.collection.duplicateKeys: MDBX_NODUPDATA else: MDBX_NOOVERWRITE
+    return t.i_put(key, val, flag) == MDBX_SUCCESS
 
 
 proc update*(t: CollectionTransaction, key: Data, val: Data): bool =

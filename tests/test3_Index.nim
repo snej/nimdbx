@@ -2,12 +2,13 @@
 
 {.experimental: "notnil".}
 
-import unittest
+import unittest, strutils, sets
+
 import nimdbx
 
 
-let DBPath = "test_db"
-let CollectionName = "stuff"
+const DBPath = "test_db"
+const CollectionName = "stuff"
 
 
 suite "Indexes":
@@ -31,9 +32,25 @@ suite "Indexes":
             ct.commit
 
     proc createLengthIndex() =
-        index = coll.openIndex("lengths") do (value: DataOut, outColumns: var Collatable):
+        index = coll.openIndex("lengths") do (value: DataOut, emit: EmitFunc):
             #debugEcho "INDEXING ", ($value).escape
-            outColumns.add(($value).len)
+            emit collatable(($value).len)
+
+    proc createWordIndex() =
+        ## Creates an index on the words in the source collection; a simple form of full-text search.
+        const Delimiters = Whitespace + {'.', ',', ';', ':', '"', '-'}
+        const Stopwords = toHashSet(["a", "an", "and", "i", "of", "or", "the", "to"])
+        proc tokenizeForIndex(sentence: string): HashSet[string] =
+            ## Breaks a string into unique lowercase words, ignoring noise words like "the".
+            var words: HashSet[string]
+            for word, isSep in tokenize(sentence, Delimiters):
+                let word = word.toLower
+                if not isSep and not Stopwords.contains(word):
+                    result.incl(word)
+
+        index = coll.openIndex("words") do (value: DataOut, emit: EmitFunc):
+            for word in tokenizeForIndex(value):
+                emit collatable(word)
 
     proc dumpIndex(snap: CollectionSnapshot): (seq[string], seq[string]) =
         var keys, vals: seq[string]
@@ -95,3 +112,22 @@ suite "Indexes":
         var (keys, vals) = dumpIndex(snap)
         check keys == @["[3]",  "[46]"]
         check vals == @["foo",  "longer"]
+
+
+    test "Multi-Emit":
+        addSomething()
+        createWordIndex()
+        let snap = index.beginSnapshot()
+        var (keys, vals) = dumpIndex(snap)
+        check keys == @["[\"am\"]", "[\"am\"]", "[\"foo\"]", "[\"splat\\'s\"]", "[\"value\"]", "[\"value\"]"]
+        check vals == @["foo", "splat", "foo", "splat", "foo", "splat"]
+
+        let searchFor = collatable("value")
+        var hits: seq[string]
+        var curs = snap[searchFor .. searchFor]
+        for key, value in curs:
+            echo $(key.asCollatable[0]), " : ", $value
+            hits.add($value)
+        check hits == @["foo", "splat"]
+
+

@@ -242,6 +242,8 @@ proc clear*(coll: var Collatable) =
 #%%%%%%%% ACCESSORS:
 
 
+func isEmpty*(coll: Collatable): bool = coll.data.len == 0
+
 func data*(coll: Collatable): lent seq[byte] =
     ## The encoded data.
     return coll.data
