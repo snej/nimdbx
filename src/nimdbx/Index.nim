@@ -4,28 +4,26 @@
 # {.experimental: "strictFuncs".}
 
 import Collatable, Collection, CRUD, Cursor, Data, Transaction
-import private/libmdbx
+import private/[libmdbx, vals]
 import strformat
 
 
 # An index is stored as a Collection whose name is of the form "index::<source>::<name>",
 # where <source> is the name of the Collection being indexed, and <name> is the index's name.
 #
-# An index's keys are Collatable; these are produced by its IndexFunc.
-# Its values are keys in the source collection, so its ValueType is the source's KeyType.
+# An index's keys are Collatable; these are the keys emitted by its IndexFunc.
+# Its values are the values emitted by the IndexFunc, with the source collection key appended.
 # Indexes always support duplicate keys.
 #
-# In other words, an entry in an index maps a Collatable value produced by the IndexFunc
-# (the property being indexed) to the key in the source collection of the value that was indexed.
-# For this reason it's sometimes called an "inverted index".
+# In other words, an entry in an index maps a key and value emitted by the IndexFunc, and also
+# remembers which key in the source Collection produced it.
 #
 # The index is initially populated by the `rebuild` method, which iterates over the source
-# Collection, calls the IndexFunc on each value, and if a non-empty Collatable is produced it
-# writes that and the key to the index Collection.
+# Collection, calls the IndexFunc on each value, and writes any emitted key/value pairs.
 #
 # The index is updated by `updateEntry`, which is called as a changeHook on the Collection.
-# `updateEntry` has to call the IndexFunc on both the old and the new value. If the resulting
-# Collatables are different, it then deletes the old Collatable key and inserts the new one.
+# `updateEntry` has to call the IndexFunc on both the old and the new value. Any key/value pairs
+# emitted by the old value are deleted; ones produced by the new value are inserted.
 
 
 type
@@ -41,17 +39,24 @@ type
         ## The index is stored as a separate Collection, that can be queried using key-value
         ## getters or Cursors.
 
-    EmitFunc* = proc(indexKey: Collatable)
+    EmitFunc* = proc(indexKey: sink Collatable, indexValue: sink Collatable = Collatable())
         ## A callback given to an IndexFunc, to be called by that function for each entry to add
         ## to the index.
 
-    IndexFunc* = proc(value: DataOut, emit: EmitFunc)
+    IndexFunc* = proc(value: DataOut, emit: EmitFunc) {.noSideEffect.}
         ## A user-supplied function that's given a value from the source Collection
-        ## and calls the `emit` function with value(s) to be indexed, if any.
+        ## and calls the `emit` function zero or more times with a key and value to be indexed.
+        ## (Note that multiple keys/values may be indexed.)
         ##
         ## NOTE: It's very important that this function be repeatable: given the same `value` it
-        ## should always emit the same index keys. Otherwise the index will get mixed up.
+        ## should always emit the same index keys/values. Otherwise the index will get mixed up.
 
+
+proc collatableKey(ind: Index, key: DataOut): Collatable =
+    if ind.source.keyType == IntegerKeys:
+        result.add(key.asDataOut.asInt)
+    else:
+        result.add(key.asDataOut.asString)
 
 proc updateEntry(ind: Index; txn: ptr MDBX_txn; key, oldValue, newValue: MDBX_val;
                  flags: MDBX_put_flags_t): bool =
@@ -61,34 +66,21 @@ proc updateEntry(ind: Index; txn: ptr MDBX_txn; key, oldValue, newValue: MDBX_va
         try:
             #echo "INDEX: ", ($DataOut(val: key)).escape, " -> old ", ($DataOut(val: oldValue)).escape, " / new ", ($DataOut(val: newValue)).escape
             let ct = ind.index.with(i_recoverTransaction(txn))
-            var firstDel, firstIns: Collatable   # cache the first `emit` call on old and new value
-            var updated = false
+            let collKey = ind.collatableKey(key)
+
+            proc callIndexFunc(val: MDBX_val, isNew: bool) =
+                ind.indexer(DataOut(val: val)) do (indexKey, indexValue: sink Collatable):
+                    let indexValue = indexValue & collKey
+                    if isNew:
+                        discard ct.insert(indexKey, indexValue)
+                    else:
+                        discard ct.del(indexKey, indexValue)
+                    ind.updateCount += 1
 
             if oldValue.exists:
-                ind.indexer(DataOut(val: oldValue)) do (indexValue: Collatable):
-                    if firstDel.isEmpty:
-                        firstDel = indexValue
-                    elif not indexValue.isEmpty:
-                        discard ct.del(indexValue, key)
-                        updated = true
-
+                callIndexFunc(oldValue, false)
             if newValue.exists:
-                ind.indexer(DataOut(val: newValue)) do (indexValue: Collatable):
-                    if firstIns.isEmpty:
-                        firstIns = indexValue
-                    elif not indexValue.isEmpty:
-                        discard ct.insert(indexValue, key)
-                        updated = true
-
-            # See if the first-emitted values for old/new data are different:
-            if firstDel != firstIns:
-                if not firstDel.isEmpty:
-                    discard ct.del(firstDel, key)
-                if not firstIns.isEmpty:
-                    discard ct.insert(firstIns, key)
-                updated = true
-            if updated:
-                ind.updateCount += 1
+                callIndexFunc(newValue, true)
         except:
             let x = getCurrentException()
             echo "EXCEPTION updating index ", ind.index.name, ": ", x.name, " ", x.msg
@@ -103,8 +95,9 @@ proc rebuild*(ind: Index) =
     ind.index.inTransaction do (ct: CollectionTransaction):
         ct.delAll()
         for key, val in ind.source.with(ct.snapshot):
-            ind.indexer(val) do (indexValue: Collatable):
-                discard ct.insert(indexValue, key)
+            ind.indexer(val) do (indexKey, indexValue: sink Collatable):
+                let indexValue = indexValue & ind.collatableKey(key)
+                discard ct.insert(indexKey, indexValue)
         ct.commit()
     ind.index.initialized = true
     ind.updateCount = 0
@@ -124,11 +117,10 @@ proc openIndex*(on: Collection not nil, name: string, indexer: IndexFunc not nil
     ##
     ## Changing the behavior of the indexer function is also likely to corrupt the index. If you
     ## reopen an Index using a different indexer, call `rebuild` right afterwards.
-    let valueType = if on.keyType == IntegerKeys: IntegerValues else: StringValues
     let indexColl = on.db.openCollection(&"index::{on.name}::{name}",
                                          {CreateCollection, DuplicateKeys},
                                          StringKeys,
-                                         valueType)
+                                         StringValues)
     var index = Index(source: on, index: indexColl, name: name, indexer: indexer)
     if not index.index.initialized:
         index.rebuild()

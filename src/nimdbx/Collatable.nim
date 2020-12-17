@@ -228,6 +228,16 @@ proc addCaseInsensitive*(coll: var Collatable, str: string) =
     coll.add(str.toLowerAscii)
 
 
+proc add*(coll: var Collatable, other: Collatable) =
+    ## Adds one Collatable's contents to another.
+    coll.data.add(other.data)
+
+
+proc `&`*(a, b: Collatable): Collatable =
+    ## Concatenates two Collatables, returning a new one.
+    Collatable(data: a.data & b.data)
+
+
 macro addAll*(coll: var Collatable, args: varargs[typed]) =
     ## A utility macro that adds all its arguments to a Collatable.
     result = nnkStmtList.newTree()
