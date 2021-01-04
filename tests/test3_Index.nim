@@ -65,7 +65,6 @@ suite "Indexes":
         index = coll.openIndex("words") do (value: DataOut, emit: EmitFunc):
             for word, start in tokenizeForIndex(value):
                 emit collatable(word), collatable(start)
-            index = nil
 
     proc dumpIndex(snap: CollectionSnapshot): (seq[string], seq[string]) =
         var keys, vals: seq[string]

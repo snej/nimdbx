@@ -249,6 +249,7 @@ proc clear*(coll: var Collatable) =
     ## Resets the object back to an empty state.
     coll.data.setLen(0)
 
+
 #%%%%%%%% ACCESSORS:
 
 
@@ -269,11 +270,14 @@ func val*(coll: Collatable)   : MDBX_val = mkVal(coll.data)
 func val*(coll: CollatableRef): MDBX_val = coll.val
 
 
-func cmp*(a: Collatable | CollatableRef, b: Collatable | CollatableRef): int =
+func cmp*(a, b: distinct CollatableAny): int =
     ## Compares two Collatables. This enables `\<`, `==`, `\>`, etc.
-    return dataCmp(unsafeAddr a.data[0], a.data.len, unsafeAddr b.data[0], b.data.len)
+    if a.data.len == 0 or b.data.len == 0:
+        return a.data.len - b.data.len      # (dataCmp barfs on 0 lengths)
+    else:
+        return dataCmp(unsafeAddr a.data[0], a.data.len, unsafeAddr b.data[0], b.data.len)
 
-#func `==`*(a: Collatable | CollatableRef, b: Collatable | CollatableRef): bool = (cmp(a, b) == 0)
+func `==`*(a, b: distinct CollatableAny): bool = (cmp(a, b) == 0)
 
 
 #%%%%%%%% READING / ITERATING:
