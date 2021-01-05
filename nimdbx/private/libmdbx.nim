@@ -10,7 +10,16 @@ import nimterop/[build, cimport], os, strutils
 
 #### Configuration for building the libmdbx C library:
 
-const baseDir = currentSourcePath.parentDir() / "../../../../nimdbx/vendor/libmdbx"
+proc findLibmdbxSourceDir(): string =
+    ## Locates the libmdbx source directory.
+    ## In the Git repo, it's at vendor/libmdbx.
+    ## But as installed by Nimble, it ends up one level closer.
+    result = currentSourcePath.parentDir() / "../../vendor/libmdbx"
+    if not dirExists(result):
+        result = currentSourcePath.parentDir() / "../../../vendor/libmdbx"
+        assert dirExists(result)
+
+const baseDir = findLibmdbxSourceDir()
 
 setDefines(["mdbxStatic"])
 
