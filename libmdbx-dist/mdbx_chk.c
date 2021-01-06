@@ -701,6 +701,7 @@ __extern_C key_t ftok(const char *, int);
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include <excpt.h>
 #include <tlhelp32.h>
 #include <windows.h>
 #include <winnt.h>
@@ -735,7 +736,8 @@ static inline void *mdbx_calloc(size_t nelem, size_t size) {
 
 #ifndef mdbx_realloc
 static inline void *mdbx_realloc(void *ptr, size_t bytes) {
-  return LocalReAlloc(ptr, bytes, LMEM_MOVEABLE);
+  return ptr ? LocalReAlloc(ptr, bytes, LMEM_MOVEABLE)
+             : LocalAlloc(LMEM_FIXED, bytes);
 }
 #endif /* mdbx_realloc */
 
@@ -1138,8 +1140,7 @@ MDBX_INTERNAL_FUNC int mdbx_vasprintf(char **strp, const char *fmt, va_list ap);
 
 #if defined(__linux__) || defined(__gnu_linux__)
 MDBX_INTERNAL_VAR uint32_t mdbx_linux_kernel_version;
-MDBX_INTERNAL_VAR bool
-    mdbx_RunningOnWSL /* Windows Subsystem for Linux is mad and trouble-full */;
+MDBX_INTERNAL_VAR bool mdbx_RunningOnWSL1 /* Windows Subsystem 1 for Linux */;
 #endif /* Linux */
 
 #ifndef mdbx_strdup

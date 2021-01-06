@@ -11,7 +11,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_ALLOY 1n#define MDBX_BUILD_SOURCERY b32798271a3778870f15d4b05e453a7aaf8dbca2968e2f788c1c2e2a645df0c0_v0_9_1_124_g9668aa5_dirty
+#define MDBX_ALLOY 1n#define MDBX_BUILD_SOURCERY 9854b516cd42bd97a2447d2f4adfda8cd99464906b15a3646a1409c129fbb1bc_v0_9_2_21_g1c70814
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -679,6 +679,7 @@ __extern_C key_t ftok(const char *, int);
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include <excpt.h>
 #include <tlhelp32.h>
 #include <windows.h>
 #include <winnt.h>
@@ -713,7 +714,8 @@ static inline void *mdbx_calloc(size_t nelem, size_t size) {
 
 #ifndef mdbx_realloc
 static inline void *mdbx_realloc(void *ptr, size_t bytes) {
-  return LocalReAlloc(ptr, bytes, LMEM_MOVEABLE);
+  return ptr ? LocalReAlloc(ptr, bytes, LMEM_MOVEABLE)
+             : LocalAlloc(LMEM_FIXED, bytes);
 }
 #endif /* mdbx_realloc */
 
@@ -1116,8 +1118,7 @@ MDBX_INTERNAL_FUNC int mdbx_vasprintf(char **strp, const char *fmt, va_list ap);
 
 #if defined(__linux__) || defined(__gnu_linux__)
 MDBX_INTERNAL_VAR uint32_t mdbx_linux_kernel_version;
-MDBX_INTERNAL_VAR bool
-    mdbx_RunningOnWSL /* Windows Subsystem for Linux is mad and trouble-full */;
+MDBX_INTERNAL_VAR bool mdbx_RunningOnWSL1 /* Windows Subsystem 1 for Linux */;
 #endif /* Linux */
 
 #ifndef mdbx_strdup
@@ -4343,20 +4344,18 @@ txn_managed::~txn_managed() noexcept {
 
 void txn_managed::abort() {
   const error err = static_cast<MDBX_error_t>(::mdbx_txn_abort(handle_));
-  if (MDBX_UNLIKELY(err.code() != MDBX_SUCCESS)) {
-    if (err.code() != MDBX_THREAD_MISMATCH)
-      handle_ = nullptr;
+  if (MDBX_LIKELY(err.code() != MDBX_THREAD_MISMATCH))
+    handle_ = nullptr;
+  if (MDBX_UNLIKELY(err.code() != MDBX_SUCCESS))
     err.throw_exception();
-  }
 }
 
 void txn_managed::commit() {
   const error err = static_cast<MDBX_error_t>(::mdbx_txn_commit(handle_));
-  if (MDBX_UNLIKELY(err.code() != MDBX_SUCCESS)) {
-    if (err.code() != MDBX_THREAD_MISMATCH)
-      handle_ = nullptr;
+  if (MDBX_LIKELY(err.code() != MDBX_THREAD_MISMATCH))
+    handle_ = nullptr;
+  if (MDBX_UNLIKELY(err.code() != MDBX_SUCCESS))
     err.throw_exception();
-  }
 }
 
 //------------------------------------------------------------------------------
