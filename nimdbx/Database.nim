@@ -1,3 +1,8 @@
+# Database.nim
+
+{.experimental: "notnil".}
+{.experimental: "strictFuncs".}
+
 import Error, private/libmdbx
 from os import nil
 import tables
@@ -6,10 +11,9 @@ import tables
 type
     DatabaseObj* = object
         m_env {.requiresInit.}: ptr MDBX_env
-        m_collections*: Table[string, ref RootObj]
-        #openDBIMutex: mutex    # TODO: Implement this
+        m_collections: Table[string, ref RootObj]
 
-    Database* = ref DatabaseObj
+    Database* = ref DatabaseObj not nil
         ## An open database file. Data is stored in Collections within it.
 
     DatabaseFlag* = enum
@@ -127,13 +131,16 @@ proc openDatabase*(path: string,
     check mdbx_env_set_userctx(env, cast[pointer](result))  # In case something needs it later
 
 
-func getDB(env: ptr MDBX_env): Database =
-    cast[Database](mdbx_env_get_userctx(env))
+# func getDB(env: ptr MDBX_env): Database =
+#     cast[Database](mdbx_env_get_userctx(env))
 
-func env*(db: Database): ptr MDBX_env =
+func i_env*(db: Database): ptr MDBX_env =
     if db.m_env == nil: raise newException(CatchableError, "Database has been closed")
     return db.m_env
 
+func i_collections*(db: Database): var Table[string, ref RootObj] =
+    if db.m_env == nil: raise newException(CatchableError, "Database has been closed")
+    return db.m_collections
 
 func isOpen*(db: Database): bool {.inline.} =
     return db != nil and db.m_env != nil
@@ -143,25 +150,25 @@ func mustBeOpen*(db: Database) =
 
 proc isReadOnly*(db: Database): bool =
     var envFlags: cuint
-    check mdbx_env_get_flags(db.env, addr envFlags);
+    check mdbx_env_get_flags(db.i_env, addr envFlags);
     return (envFlags and cuint(MDBX_RDONLY)) != 0
 
 
 proc stats*(db: Database): MDBX_stat =
     ## Returns low-level information about the database file.
-    check mdbx_env_stat_ex(db.env, nil, addr result, csize_t(sizeof(result)))
+    check mdbx_env_stat_ex(db.i_env, nil, addr result, csize_t(sizeof(result)))
 
 
 proc path*(db: Database): string =
     ## The filesystem path the database was opened with.
     var cpath: cstring
-    check mdbx_env_get_path(db.env, addr cpath)
+    check mdbx_env_get_path(db.i_env, addr cpath)
     return $cpath
 
 
 proc copyTo*(db: Database, path: string, flags: CopyDBFlags = {}) =
     ## Copies an open Database to a new file.
-    check mdbx_env_copy(db.env, path, MDBX_copy_flags_t(cast[uint](flags)))
+    check mdbx_env_copy(db.i_env, path, MDBX_copy_flags_t(cast[uint](flags)))
 
 
 proc close*(db: Database) =

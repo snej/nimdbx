@@ -1,5 +1,13 @@
+*.a
+*.o
 *.dylib
 *.dll
 *.so
+*.dSYM
 bin/
-tests/test_db
+/libmdbx-dist/config.h
+/libmdbx-dist/mdbx_chk
+/libmdbx-dist/mdbx_copy
+/libmdbx-dist/mdbx_dump
+/libmdbx-dist/mdbx_load
+/libmdbx-dist/mdbx_stat

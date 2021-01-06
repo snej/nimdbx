@@ -10,7 +10,7 @@ suite "Data":
         var savedData: seq[byte]
 
         proc loopback(d: Data): DataOut =
-            savedData = asSeq[byte](d.raw)
+            savedData = d.asByteSeq
             return savedData
 
         proc dumpData(d: Data): seq[byte] = loopback(d)
@@ -27,6 +27,9 @@ suite "Data":
         check asInt32(loopback(0x12345678'i32)) == 0x12345678'i32
         check asInt64(loopback(0x12345678'i32)) == 0x12345678'i64
         check asInt64(loopback(0x123456789abcdef0'i64)) == 0x123456789abcdef0'i64
+
+
+suite "Collatable":
 
     test "Make Collatables":
         check collatable(0).data == @[0x20.byte]
@@ -109,25 +112,72 @@ suite "Data":
                 roundtrip(-i)
 
     test "Read Collatables":
+        var count = 0
+        for item in collatable(17, -32, false, true, "hi"):
+            count += 1
+        check count == 5
+
         var coll = collatable(17, -32, false, true, "hi")
-        var i = Collatable.items    # instantiates the `items` iterator
-        var val = i(coll)
-        check val.type == IntType
-        check val.intValue > 07
-        val = i(coll)
-        check val.type == IntType
-        check val.intValue == -32
-        val = i(coll)
-        check val.type == BoolType
-        check val.boolValue == false
-        val = i(coll)
-        check val.type == BoolType
-        check val.boolValue == true
-        val = i(coll)
-        check val.type == StringType
-        check val.stringValue == "hi"
-        val = i(coll)
-        #TODO: Check iterator is at end (how?)
+        # var i = Collatable.items[Collatable]    # instantiates the `items` iterator
+        # var val = i(coll)
+        # check val.type == IntType
+        # check val.intValue > 07
+        # val = i(coll)
+        # check val.type == IntType
+        # check val.intValue == -32
+        # val = i(coll)
+        # check val.type == BoolType
+        # check val.boolValue == false
+        # val = i(coll)
+        # check val.type == BoolType
+        # check val.boolValue == true
+        # val = i(coll)
+        # check val.type == StringType
+        # check val.stringValue == "hi"
+        # val = i(coll)
+        # #TODO: Check iterator is at end (how?)
+
+        check coll[0].intValue > 07
+        check coll[1].intValue == -32
+        check coll[2].boolValue == false
+        check coll[3].boolValue == true
+        check coll[4].stringValue == "hi"
+        check coll[5].type == NullType
+
+        # Make sure the `data` accessor does not allow the actual data to be mutated:
+        var data = coll.data
+        data[0] = 123
+        check coll[0].intValue > 07
+
+    test "Read CollatableRef":
+        # Same as the above, but with CollatableRef instead of Collatable:
+        let source1 = collatable(17, -32, false, true, "hi")
+
+        var count = 0
+        for item in source1.val.asCollatableRef:
+            count += 1
+        check count == 5
+
+        let source2 = collatable(17, -32, false, true, "hi")
+        let coll = source2.val.asCollatableRef
+        # var i = Collatable.items[Collatable]    # instantiates the `items` iterator
+        # var val = i(coll)
+        # check val.type == IntType
+        # check val.intValue > 07
+        # val = i(coll)
+        # check val.type == IntType
+        # check val.intValue == -32
+        # val = i(coll)
+        # check val.type == BoolType
+        # check val.boolValue == false
+        # val = i(coll)
+        # check val.type == BoolType
+        # check val.boolValue == true
+        # val = i(coll)
+        # check val.type == StringType
+        # check val.stringValue == "hi"
+        # val = i(coll)
+        # #TODO: Check iterator is at end (how?)
 
         check coll[0].intValue > 07
         check coll[1].intValue == -32
@@ -142,6 +192,9 @@ suite "Data":
         check coll[0].intValue > 07
 
     test "Collatable String Conversion":
-        var coll = collatable(nil, 17, -32, false, true, "", "hi", "J.R. \"Bob\" Dobbs")
+        let coll = collatable(nil, 17, -32, false, true, "", "hi", "J.R. \"Bob\" Dobbs")
         #echo "$coll = ", $coll
         check $coll == "[null, 17, -32, false, true, \"\", \"hi\", \"J.R. \\\"Bob\\\" Dobbs\"]"
+
+        let collRef = coll.val.asCollatableRef
+        check $collRef == "[null, 17, -32, false, true, \"\", \"hi\", \"J.R. \\\"Bob\\\" Dobbs\"]"

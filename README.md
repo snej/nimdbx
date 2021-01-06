@@ -8,6 +8,7 @@ Even though it's low-level, it provides full ACID semantics: Atomic commits, Con
 
 For more details I highly recommend reading the libmdbx [README](https://github.com/erthink/libmdbx/blob/master/README.md) and at least skimming the [API documentation](https://erthink.github.io/libmdbx/).
 
+
 ## Credits and Origins
 
 NimDBX is by Jens Alfke. libmdbx is by Леонид Юрьев (Leonid Yuriev) and is a heavily modified extension of Howard Chu's [LMDB](http://lmdb.tech). Many of the concepts and even C APIs date back through [Berkeley DB](https://en.wikipedia.org/wiki/Berkeley_DB) to the original [1979 dbm library](https://en.wikipedia.org/wiki/DBM_%28computing%29).
@@ -21,6 +22,7 @@ But yes, this is really just a thin Nim shell around the libmdbx C library.
 NimDBX is released under the Apache 2 license.
 
 However, libmdbx itself is under the OpenLDAP Public License -- see `vendor/libmdbx/LICENSE`.
+
 
 ## The Data Model
 
@@ -62,11 +64,43 @@ This is for two important reasons: first, the snapshot ensures that all the data
 
 Because of this, it's important not to leave snapshots around too long. As long as a snapshot exists, it's preventing many pages of the file from being reused, even if the data in those pages becomes obsolete. That means transactions have to grow the file instead of overwriting pages.
 
+
 ## Building
 
-Building should be automatic, thanks to Nimble and [Nimterop](https://github.com/nimterop/nimterop).
+If you're using NimDBX, simply install it with `nimble install nimdbx`, then in your source code `import nimdbx`.
 
-`nimble test` will compile and run the unit tests.
+Behind the scenes, NimDBX uses [Nimterop](https://github.com/nimterop/nimterop) to build the libmdbx C library and generate the Nim bridging header. One visible side effect of this is that libmdbx isn't built until the first time you compile something that imports `nimdbx`. In general this should result only in some extra build output like:
+
+```
+# Running make
+#   Path: ~/.nimble/pkgs/nimdbx/libmdbx-dist
+# Including library ~/.nimble/pkgs/nimdbx/libmdbx-dist/libmdbx.a
+# Importing ~/.nimble/pkgs/nimdbx/libmdbx-dist/mdbx.h
+# Saved to ~/.cache/nim/nimterop/toastCache/nimterop_4071036711.nim
+```
+
+I mention this only because, if there are any errors building libmdbx, they'll show up here.
+
+## Working On NimDBX
+
+If you want to work on NimDBX itself, then instead of the normal install process you should clone the repo from Github, since nimble only installs a portion of the repo.
+
+After that, just `cd` to the source tree and run `nimble test` to compile and run the unit tests.
+
+### Updating libmdbx
+
+`libmdbx` is a submodule, at `vendor/libmdbx`. However, because of conflicts between nimble and libmdbx's build scripts, we don't actually build it from that directory. Instead, we build a "distribution" version of the libmdbx source, then copy that into the `libmdbx-dist` directory. That's the code that actually gets built by Nimterop.
+
+So to update the version/commit of libmdbx, there are a few steps involved:
+
+1. `cd vendor/libmdbx`
+2. Pull or checkout the desired commit.
+3. `make dist`
+4. Copy the resulting `dist` directory to the `libmdbx-dist` directory at the top level.
+5. Build and test NimDBX.
+
+When you commit your changes, make sure you commit both the updated files in `libmdbx-dist`, and the updated submodule reference in `vendor/libmdbx`.
+
 
 ## Status
 

@@ -1,9 +1,10 @@
 # Collatable.nim
 
-import macros, strutils
+{.experimental: "strictFuncs".}
 
-proc c_memcmp(a, b: pointer, size: csize_t): cint {.
-  importc: "memcmp", header: "<string.h>", noSideEffect.}
+import macros, strutils
+import private/[libmdbx, vals]
+
 
 
 ## Introduction
@@ -51,9 +52,16 @@ proc c_memcmp(a, b: pointer, size: csize_t): cint {.
 ## the data type, and type-specific fields containing the values.
 
 
-type Collatable* = object
-    ## Stores encoded collatable data. See the Introduction above.
-    data: seq[byte]    # The encoded binary data
+type
+    Collatable* = object
+        ## Stores encoded collatable data. See the Introduction above.
+        data: seq[byte]    # The encoded binary data
+
+    CollatableRef* = object
+        ## A reference to encoded collatable data stored elsewhere. See the Introduction above.
+        data: MDBX_val    # The encoded binary data
+
+    CollatableAny* = Collatable | CollatableRef
 
 
 #%%%%%%%% INTERNALS
@@ -99,7 +107,7 @@ proc writeNegativeInt(buf: var openarray[byte], start: Natural, n: int64): int =
             len += 1
     return len
 
-proc readInt(buf: seq[byte], tag: byte, pos: var int): int64 =
+proc readInt(buf: seq[byte] | MDBX_val, tag: byte, pos: var int): int64 =
     # Reads an encoded integer from `buf`.
     # - `tag` is the tag byte preceding the number.
     # - `pos` on entry is the offset of the start of the number (after the tag);
@@ -220,6 +228,16 @@ proc addCaseInsensitive*(coll: var Collatable, str: string) =
     coll.add(str.toLowerAscii)
 
 
+proc add*(coll: var Collatable, other: Collatable) =
+    ## Adds one Collatable's contents to another.
+    coll.data.add(other.data)
+
+
+proc `&`*(a, b: Collatable): Collatable =
+    ## Concatenates two Collatables, returning a new one.
+    Collatable(data: a.data & b.data)
+
+
 macro addAll*(coll: var Collatable, args: varargs[typed]) =
     ## A utility macro that adds all its arguments to a Collatable.
     result = nnkStmtList.newTree()
@@ -227,22 +245,39 @@ macro addAll*(coll: var Collatable, args: varargs[typed]) =
         result.add(newCall(bindSym"add", coll, arg))
 
 
+proc clear*(coll: var Collatable) =
+    ## Resets the object back to an empty state.
+    coll.data.setLen(0)
+
+
 #%%%%%%%% ACCESSORS:
 
 
-proc data*(coll: Collatable): lent seq[byte] =
+func isEmpty*(coll: Collatable): bool = coll.data.len == 0
+
+func data*(coll: Collatable): lent seq[byte] =
     ## The encoded data.
     return coll.data
 
 
-proc cmp*(a, b: Collatable): int =
+func data*(coll: CollatableRef): seq[byte] =
+    ## The encoded data.
+    if coll.data.len == 0:
+        return @[]
+    return @( toOpenArray(coll.data.unsafeBytes, 0, coll.data.len - 1) )
+
+func val*(coll: Collatable)   : MDBX_val = mkVal(coll.data)
+func val*(coll: CollatableRef): MDBX_val = coll.val
+
+
+func cmp*(a, b: distinct CollatableAny): int =
     ## Compares two Collatables. This enables `\<`, `==`, `\>`, etc.
-    let len = min(a.data.len, b.data.len)
-    if len > 0:
-        result = c_memcmp(unsafeAddr a.data[0], unsafeAddr b.data[0], csize_t(len))
-        if result != 0:
-            return
-    result = a.data.len - b.data.len
+    if a.data.len == 0 or b.data.len == 0:
+        return a.data.len - b.data.len      # (dataCmp barfs on 0 lengths)
+    else:
+        return dataCmp(unsafeAddr a.data[0], a.data.len, unsafeAddr b.data[0], b.data.len)
+
+func `==`*(a, b: distinct CollatableAny): bool = (cmp(a, b) == 0)
 
 
 #%%%%%%%% READING / ITERATING:
@@ -265,14 +300,17 @@ type Item* = object
         of StringType:  stringValue*: string
 
 
-proc asCollatable*(data: seq[byte]): Collatable =
-    ## Wraps already-encoded data in a Collatable object so its items can be accessed.
+func asCollatable*(data: seq[byte]): Collatable =
+    ## Wraps already-encoded data in a Collatable object so it can be added to.
     result.data = data
 
-# TODO: a form of asCollatable that doesn't copy the data, i.e takes an `openarray` or `ptr`.
+func asCollatableRef*(val: MDBX_val): CollatableRef =
+    ## Wraps already-encoded data in a CollatableRef object, without copying it,
+    ## so its items can be accessed.
+    result.data = val
 
 
-iterator items*(coll: Collatable): Item {.closure.} =
+iterator items*(coll: CollatableAny): Item {.closure.} =
     ## Iterator over the items in a Collatable. Lets you say `for item in coll: ...`.
     var item: Item
     var pos = 0
@@ -302,7 +340,8 @@ iterator items*(coll: Collatable): Item {.closure.} =
                 raise newException(ValueError, "Corrupted Collatable (unknown tag)")
         yield item
 
-proc `[]`*(coll: Collatable, index: Natural): Item =
+
+func `[]`*(coll: CollatableAny, index: Natural): Item =
     ## Returns an item from a Collatable.
     ## If the index is out of range, it returns a `null` item.
     ##
@@ -318,7 +357,7 @@ proc `[]`*(coll: Collatable, index: Natural): Item =
 #%%%%%%%% STRING CONVERSION:
 
 
-proc `$`*(o: Item): string =
+func `$`*(o: Item): string =
     ## Converts an item to a string, in JSON format.
     case o.type:
         of NullType:    return "null"
@@ -327,7 +366,7 @@ proc `$`*(o: Item): string =
         of StringType:  return o.stringValue.escape
 
 
-proc `$`*(coll: Collatable): string =
+func `$`*(coll: CollatableAny): string =
     ## Converts a Collatable to a string, as a JSON array.
     result = newStringOfCap(coll.data.len)
     result.add("[")

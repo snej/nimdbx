@@ -1,6 +1,9 @@
 # Collection.nim
 
-import Database, Error, private/libmdbx
+{.experimental: "notnil".}
+{.experimental: "strictFuncs".}
+
+import Database, Data, Error, private/libmdbx
 import tables
 
 let nil_DBI = MDBX_dbi(0xFFFFFFFF)
@@ -13,6 +16,7 @@ type
         keyType* {.requiresInit.}  : KeyType
         valueType* {.requiresInit.}: ValueType
         initialized*               : bool       ## False the first time this Collection is opened
+        i_changeHook*              : I_ChangeHook    ## NOT PUBLIC
 
     Collection* = ref CollectionObj
         ## A namespace in a Database: a set of key/value pairs.
@@ -23,7 +27,6 @@ type
     CollectionFlag* = enum
         ## A flag that describes properties of a Collection, given when opening or creating it.
         CreateCollection,   ## Create Collection if it doesn't exist
-        MustExist,          ## Raise an exception if it doesn't exist (instead of returning nil)
         DuplicateKeys       ## Allows dup keys (multiple values per key.) Must specify ValueType!
     CollectionFlags* = set[CollectionFlag]
         ## Flags that describe properties of a Collection, given when opening or creating it.
@@ -54,6 +57,8 @@ type
         FixedSizeValues,    ## Values are all the same size (this helps optimize storage)
         IntegerValues       ## Values are 32- or 64-bit signed ints, all the same size
 
+    I_ChangeHook* = proc(txn: ptr MDBX_txn; key, oldVal, newVal: MDBX_val; flags: MDBX_put_flags_t)
+
 
 const kKeyTypeDBIFlags: array[KeyType, MDBX_db_flags_t] =
         [MDBX_DB_DEFAULTS, MDBX_REVERSEKEY, MDBX_INTEGERKEY]
@@ -69,7 +74,7 @@ proc openDBI(db: Database, name: string, flags: MDBX_db_flags_t): (MDBX_dbi, boo
     let readOnly = db.isReadOnly
     var txn: ptr MDBX_txn
     let txnFlags = if readOnly: MDBX_TXN_RDONLY else: MDBX_TXN_READWRITE
-    check mdbx_txn_begin(db.env, nil, txnFlags, addr txn)
+    check mdbx_txn_begin(db.i_env, nil, txnFlags, addr txn)
 
     var dbi: MDBX_dbi
     let err = mdbx_dbi_open(txn, name, flags, addr dbi)
@@ -88,30 +93,20 @@ proc openDBI(db: Database, name: string, flags: MDBX_db_flags_t): (MDBX_dbi, boo
     return (dbi, preexisting);
 
 
-proc getOpenCollection*(db: Database, name: string): Collection =
+func getOpenCollection*(db: Database, name: string): Collection =
     ## Returns an already-opened Collection with the given name, or nil.
-    return Collection(db.m_collections.getOrDefault(name))
+    return Collection(db.i_collections.getOrDefault(name))
 
 
-proc openCollection*(db: Database,
-                     name: string,
-                     flags: CollectionFlags = {},
-                     keyType: KeyType = StringKeys,
-                     valueType: ValueType = BlobValues): Collection =
+proc openCollectionOrNil*(db: Database,
+                          name: string,
+                          flags: CollectionFlags = {},
+                          keyType: KeyType = StringKeys,
+                          valueType: ValueType = BlobValues): Collection =
     ## Returns a Collection object giving access to a persistent named collection in a Database.
-    ## Multiple calls with the same name will return the same Collection object.
     ##
-    ## If no collection with that name exists, the behavior depends on the flags:
-    ## - If ``CreateCollection`` is given, the collection will be created.
-    ## - If ``MustExist`` is given, ``MDBX_NOTFOUND`` is raised.
-    ## - Otherwise ``nil`` is returned.
-    ##
-    ## If the collection does already exist, its key and value types must match the ones given,
-    ## or ``MDBX_INCOMPATIBLE`` will be raised.
-    ##
-    ## If the ``DuplicateKeys`` flag is set, the collection will allow multiple values for a key,
-    ## and sorts those values. You must then specify a ValueType other than ``BlobValues``, to
-    ## define their sort order.
+    ## This is just like `openCollection`, except that if the collection is not found
+    ## it returns `nil` instead of raising an exception.
 
     result = db.getOpenCollection(name)
     if result != nil:
@@ -130,28 +125,94 @@ proc openCollection*(db: Database,
 
     let (dbi, preexisting) = db.openDBI(name, dbiflags)
     if dbi == nil_DBI:
-        if MustExist in flags:
-            throw MDBX_NOTFOUND
         return nil
 
     result = Collection(name: name, db: db, m_dbi: dbi, keyType: keyType, valueType: valueType,
                         initialized: preexisting)
-    db.m_collections[name] = result
+    db.i_collections[name] = result
+
+
+proc openCollection*(db: Database,
+                     name: string,
+                     flags: CollectionFlags = {},
+                     keyType: KeyType = StringKeys,
+                     valueType: ValueType = BlobValues): Collection not nil =
+    ## Returns a Collection object giving access to a persistent named collection in a Database.
+    ## Multiple calls with the same name will return the same Collection object.
+    ##
+    ## If no collection with that name exists, the behavior depends on the flags:
+    ## - If ``CreateCollection`` is given, the collection will be created.
+    ## - Otherwise an `MDBX_NOTFOUND` exception is raised.
+    ##
+    ## If the collection does already exist, its key and value types must match the ones given,
+    ## or ``MDBX_INCOMPATIBLE`` will be raised.
+    ##
+    ## If the ``DuplicateKeys`` flag is set, the collection will allow multiple values for a key,
+    ## and sorts those values. You must then specify a ValueType other than ``BlobValues``, to
+    ## define their sort order.
+    let coll = openCollectionOrNil(db, name, flags, keyType, valueType)
+    if coll == nil:
+        throw MDBX_NOTFOUND
+    else:
+        return coll
+
 
 proc createCollection*(db: Database,
                        name: string,
-                       keyType: KeyType = StringKeys): Collection =
-    openCollection(db, name, {CreateCollection}, keyType)
+                       keyType: KeyType = StringKeys,
+                       valueType: ValueType = BlobValues): Collection not nil =
+    ## Returns a Collection object giving access to a persistent named collection in a Database.
+    ## The Collection is created if it doesn't already exist.
+    ##
+    ## This is just like `openCollection`, except that the flags are implicitly given as
+    ## `CreateCollection`.
+    var flags = {CreateCollection}
+    if valueType != BlobValues:
+        flags = flags + {DuplicateKeys}
+    return openCollection(db, name, flags, keyType, valueType)
 
 
-proc duplicateKeys*(coll: Collection): bool =
+func duplicateKeys*(coll: Collection): bool =
     ## True if the Collection supports duplicate keys.
     coll.valueType > BlobValues
 
-proc dbi*(coll: Collection): MDBX_dbi =
+
+func i_dbi*(coll: Collection): MDBX_dbi =
     coll.db.mustBeOpen()
     return coll.m_dbi
 
 
 # Looking for the accessor functions to, you know, _do stuff_ with a Collection?
-# They're in CRUD.nim and Transaction.nim.
+# They're in the CRUD, Cursor and Transaction modules.
+
+
+#%%%%%%% CHANGE HOOK
+
+
+proc i_addChangeHook*(coll: Collection not nil, hook: I_ChangeHook) =
+    let prevHook = coll.i_changeHook
+    if prevHook == nil:
+        coll.i_changeHook = hook
+    else:
+        coll.i_changeHook = proc(txn: ptr MDBX_txn; key, oldVal, newVal: MDBX_val; flags: MDBX_put_flags_t) =
+            hook(txn, key, oldVal, newVal, flags)
+            prevHook(txn, key, oldVal, newVal, flags)
+
+
+type ChangeHook* = proc(key, oldValue, newValue: DataOut)
+    ## A callback function that's invoked just after a change to a key/value pair in a Collection.
+    ## - The `oldValue` will be nil if this is an insertion.
+    ## - The `newValue` will be nil if this is a deletion.
+    ##
+    ## It's legal for the callback to make changes to the Database, although of course if it changes
+    ## the Collection it was registered on, it'll be invoked re-entrantly.
+    ##
+    ## As usual with DataOut values, the parameters point to ephemeral data, so if they're going to
+    ## be stored or used after the callback returns, they should be copied to other types (like
+    ## `string`, `seq`, `int`...) first.
+
+
+proc addChangeHook*(coll: Collection not nil, hook: ChangeHook) =
+    ## Registers a ChangeHook with a Collection.
+    coll.i_addChangeHook proc(txn: ptr MDBX_txn; key, oldVal, newVal: MDBX_val; flags: MDBX_put_flags_t) =
+        hook(DataOut(val: key), DataOut(val: oldVal), DataOut(val: newVal))

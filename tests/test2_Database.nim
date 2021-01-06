@@ -1,5 +1,7 @@
 # testDatabase.nim
 
+{.experimental: "notnil".}
+
 import strformat, unittest
 import nimdbx
 
@@ -10,12 +12,15 @@ let CollectionName = "stuff"
 
 suite "Database":
     var db: Database
-    var coll: Collection
+    var coll: Collection not nil
 
     setup:
         eraseDatabase(DBPath)
         db = openDatabase(DBPath)
         coll = db.createCollection(CollectionName)
+
+        # coll.addChangeHook proc(key, oldval, newval: DataOut) =
+        #     echo "\t\tChangeHook! key = ", $key.escape, "  oldVal = ", $oldVal.escape, "  newVal = ", $newVal.escape
 
     teardown:
         if db != nil:
@@ -25,11 +30,11 @@ suite "Database":
     test "create DB":
         check db.path == DBPath
         echo db.stats
-        echo "DBI = ", ord(coll.dbi)
+        echo "DBI = ", ord(coll.i_dbi)
         echo "Stats = ", coll.stats
 
         check db.getOpenCollection(CollectionName) == coll
-        check db.openCollection("missing", {}) == nil
+        check db.openCollectionOrNil("missing", {}) == nil
 
     test "Sequences":
         var cs = coll.beginSnapshot()
@@ -76,6 +81,10 @@ suite "Database":
             ct.put("bogus", "equally bogus")
             check ct.del("splat")
             check not ct.del("missing")
+            check ct.updateAndGet("missing", "new") == ""
+            check ct.updateAndGet("bogus", "bogus-er") == "equally bogus"
+            check ct.delAndGet("missing") == ""
+            check ct.delAndGet("bogus") == "bogus-er"
             ct.abort()
 
         cs = coll.beginSnapshot()

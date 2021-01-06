@@ -10,7 +10,7 @@ import nimterop/[build, cimport], os, strutils
 
 #### Configuration for building the libmdbx C library:
 
-const baseDir = currentSourcePath.parentDir() / "../../../../nimdbx/vendor/libmdbx"
+const baseDir = currentSourcePath.parentDir() / "../../libmdbx-dist"
 
 setDefines(["mdbxStatic"])
 

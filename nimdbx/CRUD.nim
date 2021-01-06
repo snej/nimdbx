@@ -1,6 +1,9 @@
 # CRUD.nim
 
-import Collection, Data, Error, Transaction, private/libmdbx
+{.experimental: "notnil".}
+{.experimental: "strictFuncs".}
+
+import Collection, Data, Error, Transaction, private/[libmdbx, vals]
 
 
 #%%%%%%% GETTERS
@@ -11,7 +14,7 @@ proc get*(snap: CollectionSnapshot, key: Data): DataOut =
     ## As with all "get" operations, the value is valid (the memory it points to will be unchanged)
     ## until the enclosing Snapshot finishes. It points into the memory-mapped database, not a copy.
     var rawKey = key.raw
-    if not checkOptional mdbx_get(snap.txn, snap.collection.dbi,
+    if not checkOptional mdbx_get(snap.i_txn, snap.collection.i_dbi,
                                   addr rawKey, addr result.val):
         result.clear()
 
@@ -21,24 +24,24 @@ proc `[]`*(snap: CollectionSnapshot, key: Data): DataOut = snap.get(key)
 
 proc getGreaterOrEqual*(snap: CollectionSnapshot, key: Data): (DataOut, DataOut) =
     ## Finds the first key *greater than or equal to* ``key``.
-    ## If found, returns its value and updates ``key`` to the actual key.
-    ## If not found, returns nil Data and sets ``key`` to nil.
+    ## If found, returns the actual key and its value as a tuple.
+    ## If not found, returns an empty/nil key and value.
     var rawKey = key.raw
     var value: DataOut
-    if checkOptional mdbx_get_equal_or_great(snap.txn, snap.collection.dbi,
+    if checkOptional mdbx_get_equal_or_great(snap.i_txn, snap.collection.i_dbi,
                                              addr rawKey, addr value.val):
         return (DataOut(val: rawKey), DataOut(val: value.val))
 
 
 proc get*(snap: CollectionSnapshot,
           key: Data,
-          fn: proc(val:openarray[char])): bool {.discardable.} =
+          fn: proc(val:openarray[char]) not nil): bool {.discardable.} =
     ## Looks up the value of a key in a Collection; if found, it passes it to the callback
     ## function as an ``openarray``, *without copying*, then returns true.
     ## If not found, the callback is not called, and the result is false.
     var rawKey = key.raw
     var mdbVal: MDBX_val
-    result = checkOptional mdbx_get(snap.txn, snap.collection.dbi,
+    result = checkOptional mdbx_get(snap.i_txn, snap.collection.i_dbi,
                                     addr rawKey, addr mdbVal)
     if result:
         let valPtr = cast[ptr UncheckedArray[char]](mdbVal.iov_base)
@@ -74,14 +77,68 @@ proc convertFlags(flag: PutFlag): MDBX_put_flags_t =
     return kPutFlags[int(flag)]
 
 
+proc callChangeHook(t: CollectionTransaction;
+                    key, oldVal, newVal: MDBX_val,
+                    flags: MDBX_put_flags_t) {.inline.} =
+    let hook = t.collection.i_changeHook
+    if hook != nil:
+        hook(t.i_txn, key, oldVal, newVal, flags)
+
+
+proc i_replace(t: CollectionTransaction,
+               rawKey: ptr MDBX_val not nil,
+               rawVal: ptr MDBX_val,
+               mdbxFlags: MDBX_put_flags_t,
+               outOldValue: ptr string = nil): MDBX_error_t =
+    var rawOldVal: MDBX_val
+    var freeOldVal = false
+
+    proc preserveFunc(context: pointer, target: ptr MDBX_val,
+                      src: pointer, len: csize_t): cint {.cdecl.} =
+        target.iov_base = alloc(len)
+        if target.iov_base == nil:
+            return cint(MDBX_ENOMEM)
+        target.iov_len = len
+        copymem(target.iov_base, src, len)
+        cast[ptr bool](context)[] = true
+        return cint(MDBX_SUCCESS)
+
+    result = MDBX_error_t(mdbx_replace_ex(t.i_txn, t.collection.i_dbi, rawKey, rawVal,
+                                          addr rawOldVal, mdbxFlags, preserveFunc, addr freeOldVal))
+    if result == MDBX_SUCCESS:
+        var newVal: MDBX_val
+        if rawVal != nil:
+            newVal = rawVal[]
+        if t.collection.i_changeHook != nil:
+            t.collection.i_changeHook(t.i_txn, rawKey[], rawOldVal, newVal, mdbxFlags)
+        if outOldValue != nil:
+            outOldValue[] = rawOldVal.asString
+
+    if freeOldVal:
+        dealloc(rawOldVal.iov_base)
+
+
 proc i_put(t: CollectionTransaction, key: Data, value: Data, mdbxFlags: MDBX_put_flags_t): MDBX_error_t =
     var rawKey = key.raw
     var rawVal = value.raw
-    let err = MDBX_error_t(mdbx_put(t.txn, t.collection.dbi, addr rawKey, addr rawVal, mdbxFlags))
-    case err:
+
+    let hook = t.collection.i_changeHook
+    if hook == nil or (mdbxFlags and MDBX_NOOVERWRITE) != 0:
+        result = MDBX_error_t(mdbx_put(t.i_txn, t.collection.i_dbi, addr rawKey, addr rawVal, mdbxFlags))
+        if result == MDBX_SUCCESS and hook != nil:
+            # (We know there is no oldVal because MDBX_NOOVERWRITE was used)
+            hook(t.i_txn, rawKey, MDBX_val(), rawVal, mdbxFlags)
+    else:
+        result = i_replace(t, addr rawKey, addr rawVal, mdbxFlags)
+
+    case result:
         of MDBX_SUCCESS, MDBX_KEYEXIST, MDBX_NOTFOUND, MDBX_EMULTIVAL:
-            return err
-        else: throw err
+            return
+        else:
+            throw result
+
+
+proc del*(t: CollectionTransaction, key: Data): bool {.discardable.}
 
 
 proc put*(t: CollectionTransaction, key: Data, value: Data) =
@@ -90,18 +147,18 @@ proc put*(t: CollectionTransaction, key: Data, value: Data) =
     if value:
         check t.i_put(key, value, MDBX_UPSERT)
     else:
-        var rawKey = key.raw
-        discard checkOptional mdbx_del(t.txn, t.collection.dbi,
-                                       addr rawKey, nil)
+        t.del(key)
 
-proc `[]=`*(t: CollectionTransaction, key: Data, value: Data) = t.put(key, value)
+proc `[]=`*(t: CollectionTransaction, key: Data, value: Data) =
     ## Syntactic sugar for a simple ``put``.
+    t.put(key, value)
 
 
 proc insert*(t: CollectionTransaction, key: Data, val: Data): bool =
-    ## Adds a new key and its value; if the key exists, does nothing and returns false.
+    ## Adds a new key and its value; if it already exists, does nothing and returns false.
     ## (Same as ``put`` with the ``Insert`` flag.)
-    return t.i_put(key, val, MDBX_NOOVERWRITE) == MDBX_SUCCESS
+    let flag = if t.collection.duplicateKeys: MDBX_NODUPDATA else: MDBX_NOOVERWRITE
+    return t.i_put(key, val, flag) == MDBX_SUCCESS
 
 
 proc update*(t: CollectionTransaction, key: Data, val: Data): bool =
@@ -109,6 +166,15 @@ proc update*(t: CollectionTransaction, key: Data, val: Data): bool =
     ## If the key doesn't already exist, does nothing and returns false.
     ## (Same as ``put`` with the ``Update`` flag.)
     return t.i_put(key, val, MDBX_CURRENT) == MDBX_SUCCESS
+
+
+proc updateAndGet*(t: CollectionTransaction, key: Data, val: Data): string =
+    ## Replaces an existing value for a key in a Collection, like `update`,
+    ## and returns the old value.
+    ## If the key doesn't already exist, does nothing and returns an empty string.
+    var rawKey = key.raw
+    var rawVal = val.raw
+    discard checkOptional t.i_replace(addr rawKey, addr rawVal, MDBX_CURRENT, addr result)
 
 
 proc append*(t: CollectionTransaction, key: Data, val: Data) =
@@ -133,16 +199,20 @@ proc put*(t: CollectionTransaction, key: Data, valueLen: int, flags: PutFlags | 
     ## This eliminates a memory-copy inside libmdbx, and might save you some allocation.
     ## If the write was prevented because of a flag (for example, if ``Insert`` given but a value
     ## already exists) the function returns ``false`` instead of calling the callback.
+
+    # With MDBX_RESERVE, we don't give a pointer to the data. Instead, `mdbx_put` reserves space,
+    # then sets the value pointer to the address where the value should be written.
     var rawKey = key.raw
     var rawVal = MDBX_val(iov_base: nil, iov_len: csize_t(valueLen))
-    let err = mdbx_put(t.txn, t.collection.dbi, addr rawKey, addr rawVal,
-                       convertFlags(flags) or MDBX_RESERVE)
+    let mdbxFlags = convertFlags(flags) or MDBX_RESERVE
+    let err = mdbx_put(t.i_txn, t.collection.i_dbi, addr rawKey, addr rawVal, mdbxFlags)
     if err==MDBX_KEYEXIST or err==MDBX_NOTFOUND or err==MDBX_EMULTIVAL:
         return false
     check err
     # Now pass the value pointer/size to the caller to fill in:
-    let valPtr = cast[ptr UncheckedArray[char]](rawVal.iov_base)
-    fn(valPtr.toOpenArray(0, valueLen - 1))
+    fn( rawVal.asOpenArray )
+    callChangeHook(t, rawKey, rawVal, mdbxFlags)
+
 
 
 proc putDuplicates*(t: CollectionTransaction, key: Data,
@@ -158,30 +228,34 @@ proc putDuplicates*(t: CollectionTransaction, key: Data,
     vals[0].iov_len = csizet(values.len div valueCount)
     vals[0].iov_base = unsafeAddr values[0]
     vals[1].iov_len = csizet(valueCount)
-    check mdbx_put(t.txn, t.collection.dbi, addr rawKey, addr vals[0],
-                       convertFlags(flags) or MDBX_MULTIPLE)
-    # Note: `mdbx_put_PTR` is actually the same C function as `mdbx_put`, just declared in
-    # libmdbx.nim as a proc that takes key/value as `ptr` instead of `var`, so that 2 MDBX_vals
-    # can be passed.
-
-
-# TODO: Add mdbx_replace
+    let mdbxFlags = convertFlags(flags) or MDBX_MULTIPLE
+    check mdbx_put(t.i_txn, t.collection.i_dbi, addr rawKey, addr vals[0], mdbxFlags)
+    # Note: Does not call changeHook!
 
 
 #%%%%%%% COLLECTION "DELETE" OPERATIONS
 
 
-proc del*(t: CollectionTransaction, key: Data): bool {.discardable.} =
+proc del*(t: CollectionTransaction, key: Data): bool =
     ## Removes a key and its value from a Collection.
     ## Returns true if the key existed, false if it doesn't exist.
     var rawKey = key.raw
-    return checkOptional mdbx_del(t.txn, t.collection.dbi, addr rawKey, nil)
+    if t.collection.i_changeHook == nil:
+        result = checkOptional mdbx_del(t.i_txn, t.collection.i_dbi, addr rawKey, nil)
+    else:
+        result = checkOptional i_replace(t, addr rawKey, nil, MDBX_CURRENT)
 
+proc del*(t: CollectionTransaction, key: Data, val: Data): bool =
+    ## Removes matching key/value pair from a collection.
+    ## Returns true if the key and value existed, false if it doesn't exist.
+    var rawKey = key.raw
+    var rawVal = val.raw
+    result = checkOptional mdbx_del(t.i_txn, t.collection.i_dbi, addr rawKey, addr rawVal)
+    if result:
+        callChangeHook(t, rawKey, rawVal, MDBX_val(), MDBX_CURRENT)
 
-proc delAll*(t: CollectionTransaction) =
-    ## Removes **all** keys and values from a Collection, but does not delete the Collection itself.
-    check mdbx_drop(t.txn, t.collection.dbi, false)
-
-proc deleteCollection*(t: CollectionTransaction) =
-    ## Deletes the Collection itself, including all its keys and values.
-    check mdbx_drop(t.txn, t.collection.dbi, true)
+proc delAndGet*(t: CollectionTransaction, key: Data): string =
+    ## Removes a key and its value from a Collection.
+    ## Returns the old value, or an empty string if there was none to delete.
+    var rawKey = key.raw
+    discard checkOptional i_replace(t, addr rawKey, nil, MDBX_CURRENT, addr result)
