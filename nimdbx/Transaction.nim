@@ -62,9 +62,10 @@ proc beginTransaction*(db: Database): Transaction =
     ##
     ## NOTE: If not using ARC or ORC, the object will probably not be destroyed for a while after
     ## you stop using it, so explicit calls are recommended.
-    result = Transaction(m_txn: makeTransaction(db, MDBX_TXN_READWRITE), database: db)
-    discard mdbx_txn_set_userctx(result.m_txn, cast[pointer](result))
-
+    let txn = makeTransaction(db, MDBX_TXN_READWRITE)
+    result = Transaction(m_txn: txn, database: db)
+    discard mdbx_txn_set_userctx(txn, cast[pointer](result))
+    db.i_txn = txn
 
 proc i_txn*(s: Snapshot): ptr MDBX_txn =
     s.database.mustBeOpen
@@ -100,6 +101,7 @@ proc commit*(t: Transaction) =
     ## finished.
     check mdbx_txn_commit(t.i_txn)
     t.m_txn = nil
+    t.database.i_txn = nil
     # t.database = nil
 
 
@@ -109,6 +111,7 @@ proc abort*(t: Transaction) =
     ## finished.
     check mdbx_txn_abort(t.i_txn)
     t.m_txn = nil
+    t.database.i_txn = nil
     # t.database = nil
 
 
