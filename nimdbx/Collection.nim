@@ -71,25 +71,26 @@ proc openDBI(db: Database, name: string, flags: MDBX_db_flags_t): (MDBX_dbi, boo
     ## The low-level code to open an MDBX_dbi. `mdbx_dbi_open` has to be called in a transaction,
     ## but we can't use the Transaction class here, so we have to use the C API to open one.
 
+    var txn = db.i_txn
     let readOnly = db.isReadOnly
-    var txn: ptr MDBX_txn
-    let txnFlags = if readOnly: MDBX_TXN_RDONLY else: MDBX_TXN_READWRITE
-    check mdbx_txn_begin(db.i_env, nil, txnFlags, addr txn)
+    let isLocalTxn = txn == nil
+    if isLocalTxn:
+        let txnFlags = if readOnly: MDBX_TXN_RDONLY else: MDBX_TXN_READWRITE
+        check mdbx_txn_begin(db.i_env, nil, txnFlags, addr txn)
 
     var dbi: MDBX_dbi
     let err = mdbx_dbi_open(txn, name, flags, addr dbi)
     if err != MDBX_SUCCESS:
-        discard mdbx_txn_abort(txn)
+        if isLocalTxn: discard mdbx_txn_abort(txn)
         discard checkOptional(err)
         return (nil_DBI, false) # err is NOT_FOUND
 
     var newFlags, state: cuint
     check(mdbx_dbi_flags_ex(txn, dbi, addr newFlags, addr state));
     let preexisting = (state and cuint(MDBX_DBI_CREAT)) == 0
-    if readOnly:
-        discard mdbx_txn_abort(txn)
-    else:
-        check mdbx_txn_commit(txn)
+    if isLocalTxn:
+        if readOnly: discard mdbx_txn_abort(txn)
+        else: check mdbx_txn_commit(txn)
     return (dbi, preexisting);
 
 

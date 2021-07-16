@@ -12,6 +12,7 @@ type
     DatabaseObj* = object
         m_env {.requiresInit.}: ptr MDBX_env
         m_collections: Table[string, ref RootObj]
+        m_txn: ptr MDBX_txn
 
     Database* = ref DatabaseObj not nil
         ## An open database file. Data is stored in Collections within it.
@@ -141,6 +142,13 @@ func i_env*(db: Database): ptr MDBX_env =
 func i_collections*(db: Database): var Table[string, ref RootObj] =
     if db.m_env == nil: raise newException(CatchableError, "Database has been closed")
     return db.m_collections
+
+func i_txn*(db: Database): ptr MDBX_txn =
+    if db.m_env == nil: raise newException(CatchableError, "Database has been closed")
+    return db.m_txn
+
+proc `i_txn=`*(db: Database, txn: ptr MDBX_txn) =
+    db.m_txn = txn
 
 func isOpen*(db: Database): bool {.inline.} =
     return db != nil and db.m_env != nil
