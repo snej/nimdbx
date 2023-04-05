@@ -103,8 +103,8 @@ proc compareKey*(curs: Cursor, withKey: Data): int =
 
 
 proc clearKV(curs: var Cursor): bool = curs.mdbKey.clear(); curs.mdbVal.clear(); return false
-func pastMinKey(curs: Cursor): bool = curs.compareKey(curs.minKey) < curs.minKeyCmp
-func pastMaxKey(curs: Cursor): bool = curs.compareKey(curs.maxKey) > curs.maxKeyCmp
+proc pastMinKey(curs: Cursor): bool = curs.compareKey(curs.minKey) < curs.minKeyCmp
+proc pastMaxKey(curs: Cursor): bool = curs.compareKey(curs.maxKey) > curs.maxKeyCmp
 
 proc op(curs: var Cursor, op: MDBX_cursor_op): bool =
     # Lowest level cursor operation.

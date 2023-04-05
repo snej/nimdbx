@@ -57,7 +57,7 @@ type
         FixedSizeValues,    ## Values are all the same size (this helps optimize storage)
         IntegerValues       ## Values are 32- or 64-bit signed ints, all the same size
 
-    I_ChangeHook* = proc(txn: ptr MDBX_txn; key, oldVal, newVal: MDBX_val; flags: MDBX_put_flags_t)
+    I_ChangeHook* = proc(txn: ptr MDBX_txn; key, oldVal, newVal: MDBX_val; flags: MDBX_put_flags_t) {.gcsafe.}
 
 
 const kKeyTypeDBIFlags: array[KeyType, MDBX_db_flags_t] =
@@ -199,7 +199,7 @@ proc i_addChangeHook*(coll: Collection not nil, hook: I_ChangeHook) =
             prevHook(txn, key, oldVal, newVal, flags)
 
 
-type ChangeHook* = proc(key, oldValue, newValue: DataOut)
+type ChangeHook* = proc(key, oldValue, newValue: DataOut) {.gcsafe.}
     ## A callback function that's invoked just after a change to a key/value pair in a Collection.
     ## - The `oldValue` will be nil if this is an insertion.
     ## - The `newValue` will be nil if this is a deletion.
@@ -214,5 +214,5 @@ type ChangeHook* = proc(key, oldValue, newValue: DataOut)
 
 proc addChangeHook*(coll: Collection not nil, hook: ChangeHook) =
     ## Registers a ChangeHook with a Collection.
-    coll.i_addChangeHook proc(txn: ptr MDBX_txn; key, oldVal, newVal: MDBX_val; flags: MDBX_put_flags_t) =
+    coll.i_addChangeHook proc(txn: ptr MDBX_txn; key, oldVal, newVal: MDBX_val; flags: MDBX_put_flags_t) {.gcsafe.} =
         hook(DataOut(val: key), DataOut(val: oldVal), DataOut(val: newVal))
