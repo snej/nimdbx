@@ -1,8 +1,8 @@
-.\" Copyright 2015-2020 Leonid Yuriev <leo@yuriev.ru>.
+.\" Copyright 2015-2023 Leonid Yuriev <leo@yuriev.ru>.
 .\" Copyright 2012-2015 Howard Chu, Symas Corp. All Rights Reserved.
 .\" Copyright 2015,2016 Peter-Service R&D LLC <http://billing.ru/>.
 .\" Copying restrictions apply.  See COPYRIGHT/LICENSE.
-.TH MDBX_COPY 1 "2020-09-25" "MDBX 0.9.1"
+.TH MDBX_COPY 1 "2023-03-03" "MDBX 0.12.4"
 .SH NAME
 mdbx_copy \- MDBX environment copy tool
 .SH SYNOPSIS
@@ -45,6 +45,13 @@ or unused pages will be omitted from the copy. This option will
 slow down the backup process as it is more CPU-intensive.
 Currently it fails if the environment has suffered a page leak.
 .TP
+.BR \-u
+Warms up the DB before copying via notifying OS kernel of subsequent access to the database pages.
+.TP
+.BR \-U
+Warms up the DB before copying, notifying the OS kernel of subsequent access to the database pages,
+then forcibly loads ones by sequential access and tries to lock database pages in memory.
+.TP
 .BR \-n
 Open MDBX environment(s) which do not use subdirectories.
 This is legacy option. For now MDBX handles this automatically.
@@ -62,6 +69,7 @@ free during copying cannot be reused until the copy is done.
 .BR mdbx_chk (1),
 .BR mdbx_stat (1),
 .BR mdbx_load (1)
+.BR mdbx_drop (1)
 .SH AUTHOR
 Howard Chu of Symas Corporation <http://www.symas.com>,
-Leonid Yuriev <https://github.com/erthink>
+Leonid Yuriev <https://gitflic.ru/user/erthink>

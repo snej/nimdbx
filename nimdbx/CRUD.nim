@@ -67,13 +67,13 @@ type
 const kPutFlags = [MDBX_NOOVERWRITE, MDBX_CURRENT, MDBX_APPEND,
                    MDBX_ALLDUPS, MDBX_NODUPDATA, MDBX_APPENDDUP]
 
-proc convertFlags(flags: PutFlags): MDBX_put_flags_t =
+func convertFlags(flags: PutFlags): MDBX_put_flags_t =
     result = MDBX_put_flags_t(0)
     for bit in 0..5:
         if (cast[uint](flags) and uint(1 shl bit)) != 0:
             result = result or kPutFlags[bit]
 
-proc convertFlags(flag: PutFlag): MDBX_put_flags_t =
+func convertFlags(flag: PutFlag): MDBX_put_flags_t =
     return kPutFlags[int(flag)]
 
 
@@ -138,7 +138,7 @@ proc i_put(t: CollectionTransaction, key: Data, value: Data, mdbxFlags: MDBX_put
             throw result
 
 
-proc del*(t: CollectionTransaction, key: Data): bool {.discardable.}
+proc del*(t: CollectionTransaction, key: Data): bool {.gcsafe, discardable.}
 
 
 proc put*(t: CollectionTransaction, key: Data, value: Data) =
@@ -174,6 +174,7 @@ proc updateAndGet*(t: CollectionTransaction, key: Data, val: Data): string =
     ## If the key doesn't already exist, does nothing and returns an empty string.
     var rawKey = key.raw
     var rawVal = val.raw
+
     discard checkOptional t.i_replace(addr rawKey, addr rawVal, MDBX_CURRENT, addr result)
 
 

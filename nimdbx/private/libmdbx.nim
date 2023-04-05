@@ -51,6 +51,8 @@ cOverride:
         MDBX_val*  {.bycopy.} = object
             iov_base*: pointer
             iov_len*: csize_t
+    const
+        MDBX_PGWALK_MAIN* = (cast[pointer](0))
 
 # Now generate the Nim interface:
 cImport(mdbxPath, recurse = true)
