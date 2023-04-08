@@ -1,8 +1,8 @@
-.\" Copyright 2015-2020 Leonid Yuriev <leo@yuriev.ru>.
+.\" Copyright 2015-2023 Leonid Yuriev <leo@yuriev.ru>.
 .\" Copyright 2014-2015 Howard Chu, Symas Corp. All Rights Reserved.
 .\" Copyright 2015,2016 Peter-Service R&D LLC <http://billing.ru/>.
 .\" Copying restrictions apply.  See COPYRIGHT/LICENSE.
-.TH MDBX_DUMP 1 "2020-09-25" "MDBX 0.9.1"
+.TH MDBX_DUMP 1 "2023-03-03" "MDBX 0.12.4"
 .SH NAME
 mdbx_dump \- MDBX environment export tool
 .SH SYNOPSIS
@@ -66,6 +66,13 @@ Dump a specific subdatabase. If no database is specified, only the main database
 .BR \-r
 Rescure mode. Ignore some errors to dump corrupted DB.
 .TP
+.BR \-u
+Warms up the DB before dumping via notifying OS kernel of subsequent access to the database pages.
+.TP
+.BR \-U
+Warms up the DB before dumping, notifying the OS kernel of subsequent access to the database pages,
+then forcibly loads ones by sequential access and tries to lock database pages in memory.
+.TP
 .BR \-n
 Dump an MDBX database which does not use subdirectories.
 This is legacy option. For now MDBX handles this automatically.
@@ -88,6 +95,7 @@ utility to load the database using the correct comparison functions.
 .BR mdbx_copy (1),
 .BR mdbx_chk (1),
 .BR mdbx_stat (1)
+.BR mdbx_drop (1)
 .SH AUTHOR
 Howard Chu of Symas Corporation <http://www.symas.com>,
-Leonid Yuriev <https://github.com/erthink>
+Leonid Yuriev <https://gitflic.ru/user/erthink>
