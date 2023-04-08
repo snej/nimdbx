@@ -1,12 +1,12 @@
 # nimdbx
 
-An extremely fast persistent key-value store for the [Nim](https://nim-lang.org) language, based on the amazing [MDBX](https://github.com/erthink/libmdbx) library.
+An extremely fast persistent key-value store for the [Nim](https://nim-lang.org) language, based on the amazing [MDBX](https://abf.io/erthink/libmdbx) library.
 
 NimDBX just maps arbitrary keys to values, in multiple namespaces, storing them in a local file. The file is memory-mapped, which makes reads _ridiculously_ fast, with zero copying and zero system calls: the library literally just locates the data in the mapped address space and hands you a pointer to it.
 
 Even though it's low-level, it provides full ACID semantics: Atomic commits, Consistent views of data, Isolation from other commits, and Durable changes. Multiple threads and processes can open the same database file without trouble. The database is not corrupted by program crashes, kernel panics, nor power failures.
 
-For more details I highly recommend reading the libmdbx [README](https://github.com/erthink/libmdbx/blob/master/README.md) and at least skimming the [API documentation](https://erthink.github.io/libmdbx/).
+For more details I highly recommend reading the libmdbx [README](https://abf.io/erthink/libmdbx/blob/master/README.md) and at least skimming the API documentation.
 
 
 ## Credits and Origins
