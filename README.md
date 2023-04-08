@@ -1,3 +1,22 @@
+**April 2023:** In light of statements made by Leonid Yuriev in the [libmdx README](https://abf.io/erthink/libmdbx/blob/master/README.md), I'm abandoning this project and archiving the repo. Namely:
+
+>However, _MithrilDB_ [the successor to libmdbx] will not be available for countries unfriendly to
+>Russia (i.e. acceded the sanctions, devil adepts and/or NATO). [...]
+>Basically we are not inclined to allow our work to contribute to the
+>profit that goes to weapons that kill our relatives and friends.
+>NO OPTIONS.
+>[...] Contrary to _MithrilDB_, _libmdbx_ will forever free and open source.
+
+I have nothing against the Russian people, but I don't want to contribute (indirectly) to a project whose author explicitly takes Putin's party line in support of an unjustified war of conquest. I could say the same thing about profits that go to killing innocents. (I won't contribute to projects created by right-wingers at home, either -- I dropped Urbit like a rock after learning about Curtis Yarvin.)
+
+If the author's politics bother you less than me, you are of course welcome to fork this repo or contribute to one of the (currently five) existing forks. And kudos to Yuriev for committing to keeping libmdbx available.
+
+Unfortunately I'm not aware of a good alternative to libmdbx. Its ancestor LMDB is less advanced and not in active development. You can of course use SQLite as a key-value store by creating very simple tables, but it's not nearly as fast. If anyone finds a better alternative, let me know :)
+
+--Jens
+
+----
+
 # nimdbx
 
 An extremely fast persistent key-value store for the [Nim](https://nim-lang.org) language, based on the amazing [MDBX](https://abf.io/erthink/libmdbx) library.
